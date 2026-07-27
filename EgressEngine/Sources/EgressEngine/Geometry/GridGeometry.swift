@@ -2,7 +2,7 @@ import Foundation
 
 /// Pure mapping between world space (metres) and grid space (cells).
 /// Cell size comes from `SafetyStandards`, so the grid stays metrically true.
-public struct GridGeometry: Sendable {
+public struct GridGeometry: Equatable, Hashable, Sendable {
     public let cellSize: Double
     public let size: GridSize
 
