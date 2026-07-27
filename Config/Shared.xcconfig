@@ -1,0 +1,18 @@
+// Shared build settings — applied to every configuration.
+// Assigned at Project ▸ Info ▸ Configurations via Debug/Release (which #include this file).
+
+// Identity — REPLACE with the bundle id you noted from the target's Build Settings.
+PRODUCT_BUNDLE_IDENTIFIER = com.Egress.Egress
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
+
+// Platform
+IPHONEOS_DEPLOYMENT_TARGET = 26.0
+TARGETED_DEVICE_FAMILY = 1          // iPhone only
+
+// Swift
+SWIFT_VERSION = 6.0
+SWIFT_STRICT_CONCURRENCY = complete
+
+// Code signing is deliberately NOT here — leave it Xcode-managed (Signing & Capabilities)
+// so device builds for the G0 Apple-Intelligence spike keep working.

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"\>
+<plist version="1.0">
+<dict>
+    <!-- Egress is fully offline: no tracking, and no data leaves the device. -->
+    <key>NSPrivacyTracking</key>
+    <false/>
+    <key>NSPrivacyTrackingDomains</key>
+    <array/>
+    <key>NSPrivacyCollectedDataTypes</key>
+    <array/>
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array>
+        <!-- UserDefaults, via @AppStorage (settings/toggles). App-internal use only. -->
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>CA92.1</string>
+            </array>
+        </dict>
+        <!--
+        Add more ONLY when the app's own code calls that category, with the CORRECT code:
+          NSPrivacyAccessedAPICategoryFileTimestamp   → C617.1 / 3B52.1 / DDA9.1
+          NSPrivacyAccessedAPICategoryDiskSpace       → 85F4.1 / E174.1 / 7D9E.1
+          NSPrivacyAccessedAPICategorySystemBootTime  → 35F9.1 / 8FFB.1
+        A wrong code for the wrong category = ITMS-91055 rejection.
+        -->
+    </array>
+</dict>
+</plist>
