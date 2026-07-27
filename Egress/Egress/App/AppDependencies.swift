@@ -1,5 +1,7 @@
-import SwiftUI
 import SwiftData
+import SwiftUI
+
+// MARK: - AppDependencies
 
 /// The composition root: the single place the app's services are assembled and injected.
 /// Hand-rolled DI — no framework.
@@ -28,7 +30,7 @@ struct AppDependencies {
         let config = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: inMemory,
-            cloudKitDatabase: .none          // offline: no iCloud sync
+            cloudKitDatabase: .none // offline: no iCloud sync
         )
         do {
             return try ModelContainer(for: schema, configurations: [config])

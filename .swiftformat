@@ -1,0 +1,35 @@
+# SwiftFormat config — aligned with .swiftlint.yml
+# Docs: https://github.com/nicklockwood/SwiftFormat/blob/main/Rules.md
+
+--swiftversion 6.0
+
+# Paths
+--exclude .build,.swiftpm,DerivedData,**/*.generated.swift,Egress/Egress.xcodeproj
+
+# Formatting
+--indent 4
+--tabwidth 4
+--maxwidth 140
+--linebreaks lf
+--semicolons never
+--commas inline
+--trimwhitespace always
+--stripunusedargs closure-only
+--self remove
+--selfrequired
+--patternlet inline
+--closingparen balanced
+--wraparguments before-first
+--wrapparameters before-first
+--wrapcollections before-first
+--wrapreturntype preserve
+--wrapconditions preserve
+--elseposition same-line
+--guardelse same-line
+--ifdef no-indent
+--xcodeindentation disabled
+--modifierorder override,public,private,fileprivate,internal,open,final,static,class,dynamic,lazy,required,convenience,mutating,nonmutating,weak,unowned,indirect
+
+# Rules — enable a curated set (defaults are already good; disable a few noisy ones)
+--disable redundantSelf,redundantReturn,unusedArguments
+--enable isEmpty,sortImports,strongifiedSelf,wrapMultilineStatementBraces,blockComments,markTypes

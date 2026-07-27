@@ -1,0 +1,29 @@
+# Lefthook — git hooks manager (Husky equivalent for polyglot repos).
+# Install once per clone: `lefthook install`
+# Bypass in an emergency: `git commit --no-verify` (avoid).
+
+pre-commit:
+  parallel: true
+  commands:
+    swiftformat:
+      glob: "*.swift"
+      # Format staged Swift files in place, then re-stage them.
+      run: swiftformat {staged_files} && git add {staged_files}
+      stage_fixed: true
+    swiftlint:
+      glob: "*.swift"
+      # Fail commit on any lint violation.
+      run: swiftlint lint --strict --quiet {staged_files}
+
+pre-push:
+  parallel: false
+  commands:
+    engine-tests:
+      # Only run when Swift files changed vs. the remote tip.
+      files: git diff --name-only @{push} HEAD
+      glob: "*.swift"
+      run: swift test --package-path EgressEngine
+    lint-full:
+      files: git diff --name-only @{push} HEAD
+      glob: "*.swift"
+      run: swiftlint lint --strict --quiet

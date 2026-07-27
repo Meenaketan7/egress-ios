@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Egress iOS — one-shot dev environment bootstrap.
+# Idempotent: safe to re-run anytime.
+#
+# What it does:
+#   1. Verifies Homebrew is installed (prompts install if missing).
+#   2. Installs pinned dev tools from Brewfile (swiftlint, swiftformat, lefthook).
+#   3. Installs git hooks via lefthook so lint/format run automatically on commit/push.
+#
+# Run once after cloning:  ./bin/setup
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO_ROOT"
+
+bold() { printf "\033[1m%s\033[0m\n" "$*"; }
+info() { printf "  \033[36m→\033[0m %s\n" "$*"; }
+ok()   { printf "  \033[32m✓\033[0m %s\n" "$*"; }
+warn() { printf "  \033[33m!\033[0m %s\n" "$*"; }
+fail() { printf "  \033[31m✗\033[0m %s\n" "$*" >&2; exit 1; }
+
+bold "==> Egress iOS dev setup"
+
+# 1. Homebrew
+if ! command -v brew >/dev/null 2>&1; then
+  warn "Homebrew not found. Install it from https://brew.sh, then re-run ./bin/setup"
+  fail "Homebrew is required."
+fi
+ok "Homebrew present ($(brew --version | head -1))"
+
+# 2. Brewfile deps
+bold "==> Installing dev tools from Brewfile"
+brew bundle install --file="$REPO_ROOT/Brewfile"
+ok "swiftlint, swiftformat, lefthook installed"
+
+# 3. Git hooks
+bold "==> Wiring git hooks via lefthook"
+lefthook install
+ok "pre-commit + pre-push hooks active"
+
+bold "==> Done."
+info "Try it:  git commit  (swiftformat + swiftlint run on staged .swift files)"
+info "Bypass in emergency:  git commit --no-verify   (avoid — CI will still enforce)"

@@ -1,20 +1,22 @@
 import SwiftUI
 import UIKit
 
+// MARK: - AppSymbol
+
 /// Central registry of every SF Symbol the app uses, each with an optional fallback.
 /// The single place to fix symbols the plan flags to confirm on iOS 26.
 /// Zero-dependency stand-in for SFSafeSymbols.
 enum AppSymbol: String, CaseIterable {
     // Tab bar
-    case spaces   = "square.grid.2x2"
+    case spaces = "square.grid.2x2"
     case simulate = "play.circle"
-    case learn    = "book"
+    case learn = "book"
 
     // HUD / metrics
-    case density = "gauge.medium"            // 🔴 confirm on iOS 26 → fallback "gauge"
-    case people  = "person.3.fill"
-    case timer   = "timer"
-    case exit    = "figure.walk.departure"   // 🟡 confirm → fallback "arrow.right.to.line"
+    case density = "gauge.medium" // 🔴 confirm on iOS 26 → fallback "gauge"
+    case people = "person.3.fill"
+    case timer
+    case exit = "figure.walk.departure" // 🟡 confirm → fallback "arrow.right.to.line"
 
     // Verdict
     case pass = "checkmark.seal.fill"
@@ -22,14 +24,14 @@ enum AppSymbol: String, CaseIterable {
     case fail = "xmark.octagon.fill"
 
     // Playback
-    case play     = "play.fill"
-    case pause    = "pause.fill"
-    case restart  = "arrow.counterclockwise"
+    case play = "play.fill"
+    case pause = "pause.fill"
+    case restart = "arrow.counterclockwise"
     case stepBack = "backward.fill"
 
     // Editor / tools
-    case wall     = "pencil.line"
-    case door     = "door.left.hand.open"    // 🟡 confirm → fallback "rectangle.portrait"
+    case wall = "pencil.line"
+    case door = "door.left.hand.open" // 🟡 confirm → fallback "rectangle.portrait"
     case obstacle = "square.dashed"
     case settings = "gearshape"
 
@@ -37,9 +39,9 @@ enum AppSymbol: String, CaseIterable {
     var fallback: String? {
         switch self {
         case .density: "gauge"
-        case .exit:    "arrow.right.to.line"
-        case .door:    "rectangle.portrait"
-        default:       nil
+        case .exit: "arrow.right.to.line"
+        case .door: "rectangle.portrait"
+        default: nil
         }
     }
 }

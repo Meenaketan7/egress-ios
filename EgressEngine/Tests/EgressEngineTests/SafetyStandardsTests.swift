@@ -1,5 +1,5 @@
-import Testing
 @testable import EgressEngine
+import Testing
 
 @Suite("SafetyStandards")
 struct SafetyStandardsTests {

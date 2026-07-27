@@ -1,5 +1,7 @@
 import SwiftUI
 
+// MARK: - AppRoot
+
 /// The app root: three tabs, each with its own navigation stack (A-02).
 struct AppRoot: View {
     var body: some View {
@@ -11,9 +13,11 @@ struct AppRoot: View {
             LearnRootView()
                 .tabItem { Label("Learn", app: .learn) }
         }
-        .tint(Color.egDataGreen)   // the single accent
+        .tint(Color.egDataGreen) // the single accent
     }
 }
+
+// MARK: - CanvasHost
 
 /// Hosts the simulation canvas + HUD, forced dark regardless of system appearance
 /// (the canvas is dark even in Light Mode — design spec).
