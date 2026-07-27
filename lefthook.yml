@@ -19,11 +19,6 @@ pre-push:
   parallel: false
   commands:
     engine-tests:
-      # Only run when Swift files changed vs. the remote tip.
-      files: git diff --name-only @{push} HEAD
-      glob: "*.swift"
       run: swift test --package-path EgressEngine
     lint-full:
-      files: git diff --name-only @{push} HEAD
-      glob: "*.swift"
       run: swiftlint lint --strict --quiet
