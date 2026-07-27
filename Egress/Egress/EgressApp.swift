@@ -1,17 +1,13 @@
-//
-//  EgressApp.swift
-//  Egress
-//
-//  Created by Chinmayee Behera on 25/07/26.
-//
-
 import SwiftUI
 
 @main
 struct EgressApp: App {
+    private let dependencies = AppDependencies.live()
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            AppRoot()
+                .environment(\.dependencies, dependencies)
         }
     }
 }
