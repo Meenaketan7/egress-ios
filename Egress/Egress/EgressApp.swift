@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 @main
 struct EgressApp: App {
@@ -8,6 +9,7 @@ struct EgressApp: App {
         WindowGroup {
             AppRoot()
                 .environment(\.dependencies, dependencies)
+                .modelContainer(dependencies.modelContainer)
         }
     }
 }
