@@ -3,10 +3,14 @@ public typealias Vec2 = SIMD2<Double>
 
 public extension SIMD2 where Scalar == Double {
     /// Euclidean length ‖v‖.
-    var length: Double { (x * x + y * y).squareRoot() }
+    var length: Double {
+        (x * x + y * y).squareRoot()
+    }
 
     /// Squared length — cheaper than `length` (no square root). Use it when only comparing magnitudes.
-    var lengthSquared: Double { x * x + y * y }
+    var lengthSquared: Double {
+        x * x + y * y
+    }
 
     /// Unit vector. Returns `.zero` for a (near-)zero vector, so force accumulation never yields NaN.
     var normalized: Vec2 {
@@ -14,7 +18,11 @@ public extension SIMD2 where Scalar == Double {
         return len > 1e-12 ? self / len : .zero
     }
 
-    func distance(to other: Vec2) -> Double { (self - other).length }
+    func distance(to other: Vec2) -> Double {
+        (self - other).length
+    }
 
-    func dot(_ other: Vec2) -> Double { x * other.x + y * other.y }
+    func dot(_ other: Vec2) -> Double {
+        x * other.x + y * other.y
+    }
 }

@@ -27,6 +27,11 @@ public struct GridGeometry: Equatable, Hashable, Sendable {
     }
 
     /// World extent of the whole grid, in metres.
-    public var worldWidth: Double { Double(size.width) * cellSize }
-    public var worldHeight: Double { Double(size.height) * cellSize }
+    public var worldWidth: Double {
+        Double(size.width) * cellSize
+    }
+
+    public var worldHeight: Double {
+        Double(size.height) * cellSize
+    }
 }

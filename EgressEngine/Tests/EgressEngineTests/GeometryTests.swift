@@ -1,10 +1,10 @@
-import Testing
 @testable import EgressEngine
+import Testing
 
 @Suite("Geometry")
 struct GeometryTests {
-
     // MARK: Vec2
+
     @Test("3-4-5 length and squared length are exact")
     func length() {
         #expect(Vec2(3, 4).length == 5)
@@ -26,11 +26,12 @@ struct GeometryTests {
     @Test("Distance and dot product")
     func distanceDot() {
         #expect(Vec2.zero.distance(to: Vec2(3, 4)) == 5)
-        #expect(Vec2(1, 0).dot(Vec2(0, 1)) == 0)    // perpendicular
-        #expect(Vec2(2, 3).dot(Vec2(4, 5)) == 23)   // 8 + 15
+        #expect(Vec2(1, 0).dot(Vec2(0, 1)) == 0) // perpendicular
+        #expect(Vec2(2, 3).dot(Vec2(4, 5)) == 23) // 8 + 15
     }
 
     // MARK: Grid mapping — a 40×40 grid is 10 m × 10 m at 0.25 m cells
+
     private let geo = GridGeometry(size: GridSize(width: 40, height: 40))
 
     @Test("A cell centre maps back to its own cell")
@@ -54,6 +55,7 @@ struct GeometryTests {
     }
 
     // MARK: Flat-array indexing
+
     @Test("Linear index round-trips with coord, and rejects out-of-bounds")
     func indexRoundTrip() throws {
         let size = GridSize(width: 40, height: 40)

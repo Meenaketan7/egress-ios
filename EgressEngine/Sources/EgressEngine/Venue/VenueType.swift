@@ -10,13 +10,13 @@ public enum VenueType: String, CaseIterable, Hashable, Sendable {
 
     public var displayName: String {
         switch self {
-        case .office:      "Office"
-        case .nightclub:   "Nightclub"
+        case .office: "Office"
+        case .nightclub: "Nightclub"
         case .concertHall: "Concert Hall"
-        case .retail:      "Retail"
-        case .transitHub:  "Transit Hub"
-        case .classroom:   "Classroom"
-        case .stadium:     "Stadium"
+        case .retail: "Retail"
+        case .transitHub: "Transit Hub"
+        case .classroom: "Classroom"
+        case .stadium: "Stadium"
         }
     }
 }

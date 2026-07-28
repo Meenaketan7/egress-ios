@@ -5,10 +5,10 @@ let package = Package(
     name: "EgressEngine",
     platforms: [.iOS(.v26), .macOS(.v26)],
     products: [
-        .library(name: "EgressEngine", targets: ["EgressEngine"]),
+        .library(name: "EgressEngine", targets: ["EgressEngine"])
     ],
     targets: [
         .target(name: "EgressEngine"),
-        .testTarget(name: "EgressEngineTests", dependencies: ["EgressEngine"]),
+        .testTarget(name: "EgressEngineTests", dependencies: ["EgressEngine"])
     ]
 )

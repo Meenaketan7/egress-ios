@@ -43,6 +43,6 @@ public struct VenueModel: Identifiable, Equatable, Sendable {
 
     /// Simulable only with a positive grid and at least one exit.
     public var isValid: Bool {
-        geometry.size.count > 0 && !exits.isEmpty
+        !geometry.size.isEmpty && !exits.isEmpty
     }
 }
