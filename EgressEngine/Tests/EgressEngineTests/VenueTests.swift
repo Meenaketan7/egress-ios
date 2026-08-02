@@ -32,6 +32,20 @@ struct VenueTests {
         }
     }
 
+    @Test("Every venue type has a positive clearance target, matching the §2.9 table")
+    func clearanceTargets() {
+        // Every type must give the scorer a usable, positive target.
+        for t in VenueType.allCases {
+            #expect(t.clearanceTarget > 0)
+        }
+        // The values the plan's §2.9 table names explicitly — pinned so a typo can't drift them.
+        #expect(VenueType.nightclub.clearanceTarget == 120)
+        #expect(VenueType.concertHall.clearanceTarget == 180)
+        #expect(VenueType.office.clearanceTarget == 150)
+        #expect(VenueType.transitHub.clearanceTarget == 240)
+        #expect(VenueType.classroom.clearanceTarget == 180)
+    }
+
     @Test("Gross and net floor area")
     func floorArea() {
         let v = VenueModel(

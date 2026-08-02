@@ -24,6 +24,12 @@ struct CanvasProjection {
         CGPoint(x: origin.x + CGFloat(world.x) * scale, y: origin.y + CGFloat(world.y) * scale)
     }
 
+    /// Screen point (points) → world point (metres). Inverse of `point(_:)` — the editor maps a
+    /// finger's location back into venue metres to place walls, exits and obstacles.
+    func world(_ screen: CGPoint) -> Vec2 {
+        Vec2(Double((screen.x - origin.x) / scale), Double((screen.y - origin.y) / scale))
+    }
+
     /// A length in metres → points.
     func length(_ metres: Double) -> CGFloat { CGFloat(metres) * scale }
 }
@@ -31,7 +37,9 @@ struct CanvasProjection {
 // MARK: - SimulationRenderer
 
 /// Pure drawing of one `SimulationSnapshot`. No state, no timing — same snapshot ⇒ same frame.
-/// Layer order is exactly the design spec's stack: grid → density → hazards → exits → agents.
+/// Layer order is the design spec's stack, with the venue's built geometry (walls + obstacles)
+/// sitting on the grid beneath the live layers: grid → walls → obstacles → density → hazards →
+/// exits → agents. Grid, walls, obstacles and exits are shared with the editor via `VenueScenery`.
 enum SimulationRenderer {
     static func draw(
         _ snapshot: SimulationSnapshot,
@@ -39,32 +47,13 @@ enum SimulationRenderer {
         projection: CanvasProjection,
         into context: inout GraphicsContext
     ) {
-        drawGrid(venue: venue, projection: projection, into: &context)
+        VenueScenery.drawGrid(venue: venue, projection: projection, into: &context)
+        VenueScenery.drawObstacles(venue.obstacles, projection: projection, into: &context)
+        VenueScenery.drawWalls(venue.walls, projection: projection, into: &context)
         drawDensity(snapshot.density, cellSize: venue.geometry.cellSize, projection: projection, into: &context)
         drawHazards(snapshot.hazards, cellSize: venue.geometry.cellSize, projection: projection, into: &context)
-        drawExits(venue.exits, projection: projection, into: &context)
+        VenueScenery.drawExits(venue.exits, projection: projection, into: &context)
         drawAgents(snapshot.agents, projection: projection, into: &context)
-    }
-
-    /// The 0.25 m dot grid, with every 4th dot (1 m) brightened — the canvas's base texture.
-    private static func drawGrid(venue: VenueModel, projection: CanvasProjection, into context: inout GraphicsContext) {
-        let cell = venue.geometry.cellSize
-        let dot: CGFloat = 1.5
-        var minor = Path()
-        var major = Path()
-        for gridY in 0 ... venue.geometry.size.height {
-            for gridX in 0 ... venue.geometry.size.width {
-                let centre = projection.point(Vec2(Double(gridX) * cell, Double(gridY) * cell))
-                let rect = CGRect(x: centre.x - dot / 2, y: centre.y - dot / 2, width: dot, height: dot)
-                if gridX % 4 == 0, gridY % 4 == 0 {
-                    major.addEllipse(in: rect)
-                } else {
-                    minor.addEllipse(in: rect)
-                }
-            }
-        }
-        context.fill(minor, with: .color(.egCanvasGrid))
-        context.fill(major, with: .color(.egCanvasGridMajor))
     }
 
     /// Per-cell density bands (persons·m⁻²). Comfortable renders nothing — only crowding shows.
@@ -108,15 +97,6 @@ enum SimulationRenderer {
             let rect = CGRect(x: topLeft.x, y: topLeft.y, width: side, height: side)
             let colour = intensity >= 0.66 ? Color.egHazardFireCore : Color.egHazardFire
             context.fill(Path(rect), with: .color(colour))
-        }
-    }
-
-    private static func drawExits(_ exits: [Exit], projection: CanvasProjection, into context: inout GraphicsContext) {
-        for exit in exits {
-            var path = Path()
-            path.move(to: projection.point(exit.a))
-            path.addLine(to: projection.point(exit.b))
-            context.stroke(path, with: .color(.egCyan), style: StrokeStyle(lineWidth: 4, lineCap: .round))
         }
     }
 

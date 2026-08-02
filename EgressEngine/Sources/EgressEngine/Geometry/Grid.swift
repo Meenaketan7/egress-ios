@@ -1,7 +1,7 @@
 // MARK: - GridCoord
 
 /// Integer cell coordinate on the simulation grid.
-public struct GridCoord: Hashable, Sendable {
+public struct GridCoord: Hashable, Codable, Sendable {
     public var x: Int
     public var y: Int
     public init(_ x: Int, _ y: Int) {

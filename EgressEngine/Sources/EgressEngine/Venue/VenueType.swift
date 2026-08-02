@@ -19,4 +19,19 @@ public enum VenueType: String, CaseIterable, Hashable, Sendable {
         case .stadium: "Stadium"
         }
     }
+
+    /// Reasoned egress goal for this venue's preset footprint (§2.9), in seconds — the target the
+    /// Safety Score's time term and the run cap are measured against. An educational default, **not**
+    /// a certified standard.
+    public var clearanceTarget: Double {
+        switch self {
+        case .office: 150
+        case .nightclub: 120
+        case .concertHall: 180
+        case .retail: 150
+        case .transitHub: 240
+        case .classroom: 180
+        case .stadium: 240
+        }
+    }
 }

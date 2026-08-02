@@ -9,11 +9,26 @@ public struct SimulationConfig: Sendable {
     public var maxValidatedAgents: Int
     /// Seed for every stochastic choice — identical seed ⇒ identical run.
     public var seed: UInt64
+    /// Editor-placed fire ignition points, in metres (world space). Empty ⇒ no fire (§2.7).
+    public var ignition: [Vec2]
+    /// Desired-speed multiplier for a panicked agent (§2.6 arousal). Defaults to the calibrated
+    /// `SimConstants.panicArousal` (1.5), so an unset run is byte-identical to before. The
+    /// faster-is-slower validation sweep (§6.5 G2) varies this: past a bottleneck, a *higher* panic
+    /// speed can make the crowd clear *slower*, because the extra shoving jams the throat.
+    public var panicSpeed: Double
 
-    public init(agentCount: Int = 200, maxValidatedAgents: Int = 200, seed: UInt64 = 0) {
+    public init(
+        agentCount: Int = 200,
+        maxValidatedAgents: Int = 200,
+        seed: UInt64 = 0,
+        ignition: [Vec2] = [],
+        panicSpeed: Double = SimConstants.panicArousal
+    ) {
         self.agentCount = agentCount
         self.maxValidatedAgents = maxValidatedAgents
         self.seed = seed
+        self.ignition = ignition
+        self.panicSpeed = panicSpeed
     }
 
     /// True when the requested count exceeds the validated performance budget.
