@@ -90,8 +90,10 @@ struct SimulateScreen: View {
     }
 
     var body: some View {
-        CanvasHost {
-            VStack(spacing: EgressSpacing.md) {
+        // The dark game-screen is framed in cream: only the canvas stays dark so agents, density and
+        // hazards read; the HUD, banner and controls take the friendly cream shell (design hero).
+        VStack(spacing: EgressSpacing.md) {
+            CanvasHost {
                 SimCanvasView(controller: controller, patternFills: feedback?.settings.colorBlindPatterns ?? true)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .overlay(alignment: .top) {
@@ -112,12 +114,19 @@ struct SimulateScreen: View {
                         }
                     }
                     .animation(reduceMotion ? .easeInOut(duration: 0.2) : Motion.banner, value: controller.escalation)
-
-                hud
-                controls
             }
-            .padding(EgressSpacing.md)
+            .clipShape(RoundedRectangle.egSquircle(EgressRadius.lg))
+            .overlay(
+                RoundedRectangle.egSquircle(EgressRadius.lg)
+                    .strokeBorder(Color.egOutline, lineWidth: 2)
+            )
+
+            hud
+            controls
         }
+        .padding(EgressSpacing.md)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.egGround)
         .navigationTitle(controller.venue.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

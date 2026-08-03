@@ -68,8 +68,7 @@ struct ResultsSheet: View {
             }
             .padding(EgressSpacing.xl)
         }
-        .background(Color.egCanvasBase)
-        .preferredColorScheme(.dark)
+        .background(Color.egGround)
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .onAppear {

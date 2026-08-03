@@ -74,6 +74,9 @@ struct SettingsSheet: View {
                     )
                 }
             }
+            .listRowBackground(Color.egSurfaceRaised)
+            .scrollContentBackground(.hidden)
+            .background(Color.egGround)
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

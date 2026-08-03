@@ -2,6 +2,8 @@ import EgressEngine
 import SwiftData
 import SwiftUI
 
+// MARK: - SpacesRootView
+
 /// The Spaces library (§3.6): a gallery of furnished presets to start from, then the saved-run
 /// history — every resolved simulation persisted as a `RunRecord`, newest-first with its score and
 /// verdict. The "+" and each preset card both open the parametric editor.
@@ -44,7 +46,10 @@ struct SpacesRootView: View {
                         }
                     }
                 }
+                .listRowBackground(Color.egSurfaceRaised)
             }
+            .scrollContentBackground(.hidden)
+            .background(Color.egGround)
             .navigationTitle("Spaces")
             .navigationDestination(item: $openPresetID) { id in
                 if let preset = VenuePreset.catalog.first(where: { $0.id == id }) {
@@ -64,11 +69,15 @@ struct SpacesRootView: View {
     }
 }
 
+// MARK: - RunRecordRow
+
 /// One saved run: venue, score, and verdict, with the timestamp.
 private struct RunRecordRow: View {
     let run: RunRecord
 
-    private var level: VerdictLevel? { VerdictLevel(rawValue: run.verdictRaw) }
+    private var level: VerdictLevel? {
+        VerdictLevel(rawValue: run.verdictRaw)
+    }
 
     var body: some View {
         HStack(spacing: EgressSpacing.md) {
