@@ -17,7 +17,7 @@
 --stripunusedargs closure-only
 --self remove
 --selfrequired
---patternlet inline
+--patternlet hoist
 --closingparen balanced
 --wraparguments before-first
 --wrapparameters before-first

@@ -6,6 +6,9 @@ import SwiftUI
 /// in S0 — swap `MockSimulation` for the real engine in the controller and not a line here moves.
 struct SimCanvasView: View {
     let controller: SimulationController
+    /// Overlay the colour-blind density textures (§5.6). Defaults on; the Simulate screen wires it to the
+    /// user's Settings toggle.
+    var patternFills: Bool = true
 
     var body: some View {
         TimelineView(.animation(paused: !controller.isRunning)) { timeline in
@@ -17,7 +20,13 @@ struct SimCanvasView: View {
                     worldHeight: venue.geometry.worldHeight,
                     viewSize: size
                 )
-                SimulationRenderer.draw(snapshot, venue: venue, projection: projection, into: &context)
+                SimulationRenderer.draw(
+                    snapshot,
+                    venue: venue,
+                    projection: projection,
+                    patternFills: patternFills,
+                    into: &context
+                )
             }
             .onChange(of: timeline.date) { _, frame in
                 controller.advance(to: frame)
@@ -41,9 +50,11 @@ struct SimCanvasView: View {
             "\(occupants) occupants",
             "\(Int(live.elapsed.rounded())) seconds elapsed",
             "\(pct)% evacuated",
-            "peak density \(String(format: "%.1f", live.worstDensity)) persons per square metre",
+            "peak density \(String(format: "%.1f", live.worstDensity)) persons per square metre"
         ]
-        if live.casualtyCount > 0 { parts.append("\(live.casualtyCount) casualties") }
+        if live.casualtyCount > 0 {
+            parts.append("\(live.casualtyCount) casualties")
+        }
         return parts.joined(separator: ", ") + "."
     }
 }

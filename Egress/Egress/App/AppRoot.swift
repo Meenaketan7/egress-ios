@@ -14,6 +14,9 @@ struct AppRoot: View {
                 .tabItem { Label("Learn", app: .learn) }
         }
         .tint(Color.egDataGreen) // the single accent
+        #if DEBUG
+            .touchIndicators() // recording aid; compiled out of release (§E.3)
+        #endif
     }
 }
 

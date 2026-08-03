@@ -31,4 +31,28 @@ enum SampleVenue {
             exits: [exit]
         )
     }
+
+    /// The Simulate-tab **money shot**: the furnished Vault (single 1.0 m door, bar + stage) with a fire
+    /// seeded in the exit queue. The single door bottlenecks the crowd right as the fire spreads through
+    /// it → casualties → a guaranteed FAIL (verdict rule 1). RALLY's fix widens that door, so the crowd
+    /// clears before the fire reaches them → fewer casualties and a better verdict on Apply & re-run.
+    /// Tuned empirically (`MoneyShotExperiment`) for a reliable, dramatic FAIL → fix arc.
+    static func moneyShotDemo() -> (VenueModel, SimulationConfig) {
+        let preset = VenuePreset.catalog.first { $0.id == "nightclub" } ?? VenuePreset.catalog[0]
+        let venue = preset.venue
+        let config = SimulationConfig(
+            agentCount: moneyShotCrowd,
+            maxValidatedAgents: 300,
+            seed: 42,
+            ignition: moneyShotIgnition
+        )
+        return (venue, config)
+    }
+
+    /// Money-shot crowd + ignition, kept as named constants so the tuning is legible and adjustable.
+    /// Tuned in `MoneyShotExperiment`: 150 people with the fire seeded in the exit queue at (5.5, 6.0)
+    /// yields ~55 casualties (FAIL); the coach's widen-to-1.7 m fix clears the queue faster and roughly
+    /// halves the toll (~32), the "fewer casualties after the fix" payoff.
+    static let moneyShotCrowd = 150
+    static let moneyShotIgnition = [Vec2(5.5, 6.0)]
 }

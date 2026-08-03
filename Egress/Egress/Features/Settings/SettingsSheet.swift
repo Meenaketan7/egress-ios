@@ -7,8 +7,10 @@ import SwiftUI
 /// verdict — "educational analysis, not certified engineering advice" (§D). Deliberately small: v3 keeps
 /// the settings scope to what actually ships.
 struct SettingsSheet: View {
-    @Environment(FeedbackServices.self) private var feedback
-    @Environment(\.dismiss) private var dismiss
+    @Environment(FeedbackServices.self)
+    private var feedback
+    @Environment(\.dismiss)
+    private var dismiss
 
     var body: some View {
         @Bindable var settings = feedback.settings
@@ -35,20 +37,41 @@ struct SettingsSheet: View {
                     Text("Haptics play on device only, and only for events that concern the analyst — thresholds, casualties and verdicts.")
                 }
 
+                Section {
+                    Toggle("Colour-blind patterns", isOn: $settings.colorBlindPatterns)
+                        .accessibilityHint("Adds dot and hatch textures to the density bands so crowding reads without colour")
+                } header: {
+                    Text("Accessibility")
+                } footer: {
+                    Text(
+                        // swiftlint:disable:next line_length
+                        "The crowding bands carry a texture as well as a colour — sparse dots for congestion, diagonal hatch for at-risk, cross-hatch for a crush — so density is never signalled by colour alone."
+                    )
+                }
+
                 Section("How scoring works") {
-                    Text("The Safety Score starts at 100 and deducts for casualties, dangerous density, the fraction of the crowd left at risk, and slow clearance. A run PASSES, gets a WARN, or FAILS on those same thresholds.")
-                        .egBody(.callout)
-                        .foregroundStyle(Color.egTextSecondary)
+                    Text(
+                        // swiftlint:disable:next line_length
+                        "The Safety Score starts at 100 and deducts for casualties, dangerous density, the fraction of the crowd left at risk, and slow clearance. A run PASSES, gets a WARN, or FAILS on those same thresholds."
+                    )
+                    .egBody(.callout)
+                    .foregroundStyle(Color.egTextSecondary)
                 }
 
                 Section {
-                    Text("Egress is an educational analysis tool, not certified engineering advice. Runs are simplified models — always defer to a qualified fire-safety professional and your local building code.")
-                        .egBody(.footnote)
-                        .foregroundStyle(Color.egTextSecondary)
+                    Text(
+                        // swiftlint:disable:next line_length
+                        "Egress is an educational analysis tool, not certified engineering advice. Runs are simplified models — always defer to a qualified fire-safety professional and your local building code."
+                    )
+                    .egBody(.footnote)
+                    .foregroundStyle(Color.egTextSecondary)
                 } header: {
                     Text("Disclaimer")
                 } footer: {
-                    Text("100% on-device. Nothing you simulate leaves this iPhone.")
+                    Text(
+                        // swiftlint:disable:next line_length
+                        "100% on-device. Egress asks for no permissions — no network, location, camera or contacts — and nothing you simulate ever leaves this iPhone."
+                    )
                 }
             }
             .navigationTitle("Settings")

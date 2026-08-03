@@ -58,6 +58,12 @@ extension Color {
     static let egDensityAtRisk = Color(hex: 0xE8632B, opacity: 0.65)
     static let egDensityCrush = Color(hex: 0xFF2D4B, opacity: 0.85)
 
+    // Density colour-blind textures (§5.6) — a brighter tint of each band, drawn as dots/hatch over the
+    // fill so the crowding band reads by pattern as well as hue.
+    static let egDensityCongestedPattern = Color(hex: 0xFFDD8A, opacity: 0.7)
+    static let egDensityAtRiskPattern = Color(hex: 0xFFB48A, opacity: 0.8)
+    static let egDensityCrushPattern = Color(hex: 0xFFC2CE, opacity: 0.9)
+
     // Hazards — FIXED
     static let egHazardFire = Color(hex: 0xFF6B1A)
     static let egHazardFireCore = Color(hex: 0xFFD24A)

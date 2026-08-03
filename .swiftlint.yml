@@ -76,11 +76,11 @@ line_length:
   ignores_comments: true
 
 file_length:
-  warning: 500
+  warning: 600
   error: 800
 
 type_body_length:
-  warning: 300
+  warning: 400
   error: 500
 
 function_body_length:
@@ -128,6 +128,9 @@ identifier_name:
     - up
     - dx
     - dy
+    - w
+    - h
+    - r
 
 type_name:
   min_length: 3

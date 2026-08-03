@@ -10,7 +10,9 @@ import SwiftUI
 enum EditorTool: String, CaseIterable, Identifiable {
     case wall, exit, obstacle, erase
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 
     var label: String {
         switch self {
@@ -142,9 +144,17 @@ final class EditorModel {
 
     // MARK: Derived venue
 
-    private var cellSize: Double { SafetyStandards.cellSize }
-    var worldWidth: Double { geometry.worldWidth }
-    var worldHeight: Double { geometry.worldHeight }
+    private var cellSize: Double {
+        SafetyStandards.cellSize
+    }
+
+    var worldWidth: Double {
+        geometry.worldWidth
+    }
+
+    var worldHeight: Double {
+        geometry.worldHeight
+    }
 
     /// The grid the room's metre extent maps to (0.25 m cells).
     var geometry: GridGeometry {
@@ -161,8 +171,13 @@ final class EditorModel {
     /// The immutable venue the simulator runs — a snapshot of the current draft.
     var venue: VenueModel {
         VenueModel(
-            id: 0, name: displayName, type: type, geometry: geometry,
-            walls: walls, exits: exits, obstacles: obstacles
+            id: 0,
+            name: displayName,
+            type: type,
+            geometry: geometry,
+            walls: walls,
+            exits: exits,
+            obstacles: obstacles
         )
     }
 
@@ -190,10 +205,16 @@ final class EditorModel {
         let dragged = a.distance(to: b)
         switch tool {
         case .wall:
-            if dragged >= minWallLength { walls.append(Wall(a: a, b: b)); return .placed }
+            if dragged >= minWallLength {
+                walls.append(Wall(a: a, b: b))
+                return .placed
+            }
             return dragged > 0 ? .rejected : .none
         case .exit:
-            if dragged >= minExitWidth { exits.append(Exit(id: allocID(), a: a, b: b)); return .placed }
+            if dragged >= minExitWidth {
+                exits.append(Exit(id: allocID(), a: a, b: b))
+                return .placed
+            }
             return dragged > 0 ? .rejected : .none
         case .obstacle:
             let (origin, size) = box(a, b)
@@ -220,7 +241,9 @@ final class EditorModel {
     func clampToBounds() {
         let w = worldWidth
         let h = worldHeight
-        func c(_ v: Vec2) -> Vec2 { Vec2(clampD(v.x, 0, w), clampD(v.y, 0, h)) }
+        func c(_ v: Vec2) -> Vec2 {
+            Vec2(clampD(v.x, 0, w), clampD(v.y, 0, h))
+        }
         walls = walls.map { Wall(a: c($0.a), b: c($0.b)) }.filter { $0.length >= minWallLength }
         exits = exits.map { Exit(id: $0.id, a: c($0.a), b: c($0.b)) }.filter { $0.width >= minExitWidth }
         obstacles = obstacles.compactMap { o in
@@ -230,6 +253,115 @@ final class EditorModel {
             guard size.x >= minObstacleSide, size.y >= minObstacleSide else { return nil }
             return Obstacle(id: o.id, origin: origin, size: size, isRelocatable: o.isRelocatable)
         }
+    }
+
+    // MARK: Accessible authoring (§5.6 — VoiceOver-operable placement)
+
+    /// A room edge a doorway can be dropped onto — the accessible alternative to dragging along a wall.
+    enum RoomEdge: String, CaseIterable, Identifiable {
+        case north, east, south, west
+        var id: String {
+            rawValue
+        }
+
+        var label: String {
+            switch self {
+            case .north: "Top"
+            case .east: "Right"
+            case .south: "Bottom"
+            case .west: "Left"
+            }
+        }
+    }
+
+    /// The narrowest an exit may be set to via the stepper, and the stepper increment (§4.2 — 0.1 m).
+    static let minEditableExit = 0.6
+    static let exitStep = 0.1
+
+    /// Add a doorway centred on the given room edge at the citable exit minimum — no drag required, so a
+    /// VoiceOver user can author exits on the primary path. The floor-drain gate still governs Simulate.
+    func addExit(on edge: RoomEdge) {
+        let half = SafetyStandards.minExitWidth / 2
+        let (a, b): (Vec2, Vec2)
+        switch edge {
+        case .north: a = Vec2(worldWidth / 2 - half, 0)
+            b = Vec2(worldWidth / 2 + half, 0)
+        case .south: a = Vec2(worldWidth / 2 - half, worldHeight)
+            b = Vec2(worldWidth / 2 + half, worldHeight)
+        case .west: a = Vec2(0, worldHeight / 2 - half)
+            b = Vec2(0, worldHeight / 2 + half)
+        case .east: a = Vec2(worldWidth, worldHeight / 2 - half)
+            b = Vec2(worldWidth, worldHeight / 2 + half)
+        }
+        exits.append(Exit(id: allocID(), a: snap(a), b: snap(b)))
+    }
+
+    /// An exit's clear width, metres — the value the stepper reads.
+    func exitWidth(_ id: Int) -> Double {
+        exits.first { $0.id == id }?.width ?? 0
+    }
+
+    /// The widest an exit can grow, symmetric about its centre, before an endpoint leaves the room.
+    func maxExitWidth(_ id: Int) -> Double {
+        guard let exit = exits.first(where: { $0.id == id }) else { return Self.minEditableExit }
+        let axis = exit.b - exit.a
+        let dir = axis.length > 1e-9 ? axis.normalized : Vec2(1, 0)
+        let half = min(rayToBound(from: exit.center, dir: dir), rayToBound(from: exit.center, dir: dir * -1))
+        return max(Self.minEditableExit, (half * 2 / cellSize).rounded(.down) * cellSize)
+    }
+
+    /// Set an exit's clear width, growing/shrinking symmetrically about its centre along its own axis,
+    /// clamped to `[minEditableExit, maxExitWidth]` so it never leaves the room.
+    func setExitWidth(_ id: Int, to width: Double) {
+        guard let i = exits.firstIndex(where: { $0.id == id }) else { return }
+        let exit = exits[i]
+        let axis = exit.b - exit.a
+        let dir = axis.length > 1e-9 ? axis.normalized : Vec2(1, 0)
+        let w = clampD(width, Self.minEditableExit, maxExitWidth(id))
+        let half = dir * (w / 2)
+        exits[i] = Exit(id: id, a: exit.center - half, b: exit.center + half)
+    }
+
+    /// Remove an exit by id — the accessible counterpart to the erase tool.
+    func removeExit(_ id: Int) {
+        exits.removeAll { $0.id == id }
+    }
+
+    /// Remove an object by id. Structural props are removable; the lock (V5) is only about *moving* them.
+    func removeObstacle(_ id: Int) {
+        obstacles.removeAll { $0.id == id }
+    }
+
+    /// Nudge a relocatable object by `delta` metres, snapped and clamped inside the room. Structural
+    /// objects never move (V5), so the call is a no-op for them.
+    func nudgeObstacle(_ id: Int, by delta: Vec2) {
+        guard let i = obstacles.firstIndex(where: { $0.id == id }), obstacles[i].isRelocatable else { return }
+        let o = obstacles[i]
+        let origin = Vec2(
+            clampD(snapScalar(o.origin.x + delta.x), 0, max(0, worldWidth - o.size.x)),
+            clampD(snapScalar(o.origin.y + delta.y), 0, max(0, worldHeight - o.size.y))
+        )
+        obstacles[i] = Obstacle(id: id, origin: origin, size: o.size, isRelocatable: true)
+    }
+
+    /// Distance (metres) from `c` along unit `dir` to the first room boundary it meets.
+    private func rayToBound(from c: Vec2, dir: Vec2) -> Double {
+        var t = Double.infinity
+        if dir.x > 1e-9 {
+            t = min(t, (worldWidth - c.x) / dir.x)
+        } else if dir.x < -1e-9 {
+            t = min(t, -c.x / dir.x)
+        }
+        if dir.y > 1e-9 {
+            t = min(t, (worldHeight - c.y) / dir.y)
+        } else if dir.y < -1e-9 {
+            t = min(t, -c.y / dir.y)
+        }
+        return t
+    }
+
+    private func snapScalar(_ v: Double) -> Double {
+        (v / cellSize).rounded() * cellSize
     }
 
     // MARK: Validation
@@ -272,19 +404,27 @@ final class EditorModel {
         var reachable = 0
         for index in 0 ..< size.count {
             let coord = size.coord(atIndex: index)
-            if blocked.contains(coord) { continue }
+            if blocked.contains(coord) {
+                continue
+            }
             free += 1
-            if field.isReachable(coord) { reachable += 1 }
+            if field.isReachable(coord) {
+                reachable += 1
+            }
         }
         return free > 0 ? Double(reachable) / Double(free) : 0
     }
 
     /// Simulable when there's a real grid, at least one exit, and most of the floor can drain.
-    var isSimulable: Bool { venue.isValid && reachableFloorFraction >= 0.5 }
+    var isSimulable: Bool {
+        venue.isValid && reachableFloorFraction >= 0.5
+    }
 
     /// A human reason the draft can't run yet, or `nil` when it's good to go.
     var blockingIssue: String? {
-        if exits.isEmpty { return "Add at least one exit." }
+        if exits.isEmpty {
+            return "Add at least one exit."
+        }
         let reachable = reachableFloorFraction
         if reachable < 0.5 {
             return "Only \(Int(reachable * 100))% of the floor can reach an exit — clear a path or add a door."
@@ -307,7 +447,9 @@ final class EditorModel {
         )
     }
 
-    private func clampD(_ v: Double, _ lo: Double, _ hi: Double) -> Double { min(max(v, lo), hi) }
+    private func clampD(_ v: Double, _ lo: Double, _ hi: Double) -> Double {
+        min(max(v, lo), hi)
+    }
 
     /// Lower corner + positive size of the box spanned by two dragged corners.
     private func box(_ a: Vec2, _ b: Vec2) -> (Vec2, Vec2) {
@@ -319,14 +461,26 @@ final class EditorModel {
     @discardableResult
     private func erase(near p: Vec2) -> Bool {
         enum Kind { case obstacle, exit, wall }
-        var best: (kind: Kind, index: Int, dist: Double)?
+        struct Hit { let kind: Kind
+            let index: Int
+            let dist: Double
+        }
+        var best: Hit?
         func consider(_ kind: Kind, _ index: Int, _ dist: Double) {
             guard dist <= eraseRadius else { return }
-            if best == nil || dist < best!.dist { best = (kind, index, dist) }
+            if dist < (best?.dist ?? .infinity) {
+                best = Hit(kind: kind, index: index, dist: dist)
+            }
         }
-        for (i, o) in obstacles.enumerated() { consider(.obstacle, i, distanceToBox(p, origin: o.origin, size: o.size)) }
-        for (i, e) in exits.enumerated() { consider(.exit, i, distanceToSegment(p, e.a, e.b)) }
-        for (i, w) in walls.enumerated() { consider(.wall, i, distanceToSegment(p, w.a, w.b)) }
+        for (i, o) in obstacles.enumerated() {
+            consider(.obstacle, i, distanceToBox(p, origin: o.origin, size: o.size))
+        }
+        for (i, e) in exits.enumerated() {
+            consider(.exit, i, distanceToSegment(p, e.a, e.b))
+        }
+        for (i, w) in walls.enumerated() {
+            consider(.wall, i, distanceToSegment(p, w.a, w.b))
+        }
         guard let hit = best else { return false }
         switch hit.kind {
         case .obstacle: obstacles.remove(at: hit.index)

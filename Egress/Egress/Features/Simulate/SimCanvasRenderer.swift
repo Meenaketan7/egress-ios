@@ -7,7 +7,7 @@ import SwiftUI
 /// grows downward — so the mapping is direct, no flip). Uniform scale preserves the room's true
 /// aspect ratio and centres it with an inset. S2's pan/zoom camera composes on top of this.
 struct CanvasProjection {
-    let scale: CGFloat          // points per metre
+    let scale: CGFloat // points per metre
     private let origin: CGPoint // screen point of world (0, 0)
 
     init(worldWidth: Double, worldHeight: Double, viewSize: CGSize, inset: CGFloat = 20) {
@@ -31,7 +31,9 @@ struct CanvasProjection {
     }
 
     /// A length in metres → points.
-    func length(_ metres: Double) -> CGFloat { CGFloat(metres) * scale }
+    func length(_ metres: Double) -> CGFloat {
+        CGFloat(metres) * scale
+    }
 }
 
 // MARK: - SimulationRenderer
@@ -45,20 +47,34 @@ enum SimulationRenderer {
         _ snapshot: SimulationSnapshot,
         venue: VenueModel,
         projection: CanvasProjection,
+        patternFills: Bool = true,
         into context: inout GraphicsContext
     ) {
         VenueScenery.drawGrid(venue: venue, projection: projection, into: &context)
         VenueScenery.drawObstacles(venue.obstacles, projection: projection, into: &context)
         VenueScenery.drawWalls(venue.walls, projection: projection, into: &context)
-        drawDensity(snapshot.density, cellSize: venue.geometry.cellSize, projection: projection, into: &context)
+        drawDensity(
+            snapshot.density,
+            cellSize: venue.geometry.cellSize,
+            projection: projection,
+            patternFills: patternFills,
+            into: &context
+        )
         drawHazards(snapshot.hazards, cellSize: venue.geometry.cellSize, projection: projection, into: &context)
         VenueScenery.drawExits(venue.exits, projection: projection, into: &context)
         drawAgents(snapshot.agents, projection: projection, into: &context)
     }
 
-    /// Per-cell density bands (persons·m⁻²). Comfortable renders nothing — only crowding shows.
+    /// Per-cell density bands (persons·m⁻²). Comfortable renders nothing — only crowding shows. When
+    /// `patternFills` is on (§5.6 colour-vision pass) each band also carries a texture — sparse dots for
+    /// congestion, a diagonal hatch for at-risk, a cross-hatch for a crush — so the bands are legible
+    /// without relying on hue.
     private static func drawDensity(
-        _ density: DensityGrid, cellSize: Double, projection: CanvasProjection, into context: inout GraphicsContext
+        _ density: DensityGrid,
+        cellSize: Double,
+        projection: CanvasProjection,
+        patternFills: Bool,
+        into context: inout GraphicsContext
     ) {
         let side = projection.length(cellSize) + 0.5 // +0.5 hides seams between cells
         var congested = Path()
@@ -81,6 +97,100 @@ enum SimulationRenderer {
         context.fill(congested, with: .color(.egDensityCongested))
         context.fill(atRisk, with: .color(.egDensityAtRisk))
         context.fill(crush, with: .color(.egDensityCrush))
+        guard patternFills else { return }
+        // Texture overlays, clipped to each band's cells, drawn brightest-band-last so a crush reads on
+        // top. The stroke colour is a lightened tint of the band so the pattern stays visible on its fill.
+        strokePattern(
+            .dots,
+            over: congested,
+            spacing: projection.length(0.5),
+            colour: .egDensityCongestedPattern,
+            into: &context
+        )
+        strokePattern(
+            .diagonal,
+            over: atRisk,
+            spacing: projection.length(0.45),
+            colour: .egDensityAtRiskPattern,
+            into: &context
+        )
+        strokePattern(
+            .cross,
+            over: crush,
+            spacing: projection.length(0.4),
+            colour: .egDensityCrushPattern,
+            into: &context
+        )
+    }
+
+    /// The three colour-blind textures. Each is a set of hairlines (or dots) generated across the band's
+    /// bounding box, then clipped to the band's own cells so only crowded floor is textured.
+    private enum DensityPattern { case dots, diagonal, cross }
+
+    private static func strokePattern(
+        _ pattern: DensityPattern,
+        over band: Path,
+        spacing: CGFloat,
+        colour: Color,
+        into context: inout GraphicsContext
+    ) {
+        let bounds = band.boundingRect
+        guard !bounds.isEmpty, spacing > 1 else { return }
+        context.drawLayer { layer in
+            layer.clip(to: band)
+            switch pattern {
+            case .dots:
+                let r = max(0.6, spacing * 0.12)
+                var y = bounds.minY
+                while y <= bounds.maxY {
+                    var x = bounds.minX
+                    while x <= bounds.maxX {
+                        layer.fill(
+                            Path(ellipseIn: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)),
+                            with: .color(colour)
+                        )
+                        x += spacing
+                    }
+                    y += spacing
+                }
+            case .diagonal:
+                layer.stroke(
+                    diagonalLines(in: bounds, spacing: spacing, rising: true),
+                    with: .color(colour),
+                    lineWidth: 1
+                )
+            case .cross:
+                layer.stroke(
+                    diagonalLines(in: bounds, spacing: spacing, rising: true),
+                    with: .color(colour),
+                    lineWidth: 1
+                )
+                layer.stroke(
+                    diagonalLines(in: bounds, spacing: spacing, rising: false),
+                    with: .color(colour),
+                    lineWidth: 1
+                )
+            }
+        }
+    }
+
+    /// A field of parallel 45° lines covering `bounds`, rising (↗) or falling (↘). Offsetting the line
+    /// origin from `-height` to `+width` guarantees the whole box is swept regardless of aspect.
+    private static func diagonalLines(in bounds: CGRect, spacing: CGFloat, rising: Bool) -> Path {
+        var path = Path()
+        var offset = -bounds.height
+        while offset <= bounds.width {
+            let x = bounds.minX + offset
+            if rising {
+                path.move(to: CGPoint(x: x, y: bounds.maxY))
+                path.addLine(to: CGPoint(x: x + bounds.height, y: bounds.minY))
+            } else {
+                path.move(to: CGPoint(x: x, y: bounds.minY))
+                path.addLine(to: CGPoint(x: x + bounds.height, y: bounds.maxY))
+            }
+            offset += spacing
+        }
+        return path
     }
 
     private static func drawHazards(
@@ -111,7 +221,9 @@ enum SimulationRenderer {
 
     /// Staff read as violet regardless of mood; everyone else is tinted by emotional state.
     private static func colour(for agent: AgentRender) -> Color {
-        if agent.mobility == .staff { return .egAgentStaff }
+        if agent.mobility == .staff {
+            return .egAgentStaff
+        }
         switch agent.emotion {
         case .calm: return .egAgentCalm
         case .uneasy: return .egAgentUneasy

@@ -16,7 +16,9 @@ import Observation
 final class FeedbackSettings {
     /// Master mute. Off ⇒ every cue is silent; haptics and visuals are untouched (audio is never the
     /// sole channel for a safety event, §5.5 rule 6, so muting it loses nothing critical).
-    var soundEnabled: Bool { didSet { defaults.set(soundEnabled, forKey: Key.soundEnabled.rawValue) } }
+    var soundEnabled: Bool {
+        didSet { defaults.set(soundEnabled, forKey: Key.soundEnabled.rawValue) }
+    }
 
     /// Caps stings at −6 dB and softens the soundstage (§3.6) — a calmer mix, not silence.
     var reduceAudioIntensity: Bool {
@@ -28,16 +30,26 @@ final class FeedbackSettings {
         didSet { defaults.set(reduceHapticIntensity, forKey: Key.reduceHapticIntensity.rawValue) }
     }
 
-    /// Sound defaults ON (it is part of the intended experience); both "reduce" toggles default OFF.
-    /// `didSet` never fires for assignments made inside `init`, so this seeds the store lazily on first
-    /// write rather than stamping defaults on launch.
+    /// Overlays a per-band texture (sparse dots → diagonal hatch → cross-hatch) on the density canvas so
+    /// the crowding bands are distinguishable by *pattern*, not colour alone (§5.6, colour-vision pass).
+    /// Defaults ON — colour must never be the sole channel for a safety signal.
+    var colorBlindPatterns: Bool {
+        didSet { defaults.set(colorBlindPatterns, forKey: Key.colorBlindPatterns.rawValue) }
+    }
+
+    /// Sound and colour-blind patterns default ON (both part of the intended, accessible experience);
+    /// the two "reduce" toggles default OFF. `didSet` never fires for assignments made inside `init`, so
+    /// this seeds the store lazily on first write rather than stamping defaults on launch.
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         soundEnabled = defaults.object(forKey: Key.soundEnabled.rawValue) as? Bool ?? true
         reduceAudioIntensity = defaults.bool(forKey: Key.reduceAudioIntensity.rawValue)
         reduceHapticIntensity = defaults.bool(forKey: Key.reduceHapticIntensity.rawValue)
+        colorBlindPatterns = defaults.object(forKey: Key.colorBlindPatterns.rawValue) as? Bool ?? true
     }
 
     private let defaults: UserDefaults
-    private enum Key: String { case soundEnabled, reduceAudioIntensity, reduceHapticIntensity }
+    private enum Key: String {
+        case soundEnabled, reduceAudioIntensity, reduceHapticIntensity, colorBlindPatterns
+    }
 }
