@@ -4,8 +4,9 @@
 > for the IndeHub Hackathon 2026. Use this as the driving document in future sessions — tick boxes as you
 > go. Authoritative spec is `EGRESS_BUILD_PLAN_v3.md`; this file is the progress ledger against it.
 >
-> **Last updated:** 2026-08-02. **Engine:** 134 tests / 29 suites green (all uncommitted on `main`).
-> **App:** builds clean, core journey verified live on iPhone 17 Simulator.
+> **Last updated:** 2026-08-03. **Engine:** 134 tests / 29 suites green (uncommitted on `meena-dev`).
+> **App:** builds clean; determinism test `EgressTests.fixedStepDeterminism` **runs green on iPhone 17 sim**
+> (`** TEST SUCCEEDED **`); core journey verified live.
 
 ---
 
@@ -77,20 +78,22 @@ S0 ─ S1 ─ [S2 built, not signed off] ─ S3 (open) ─ S4 (open) ─ S5 (ope
 
 ---
 
-## 3. OPEN ISSUES CARRIED FORWARD (block S2 sign-off) ⚠️
+## 3. OPEN ISSUES CARRIED FORWARD (block S2 sign-off) ⚠️ → ✅ RESOLVED (session 2026-08-03)
 
-These were discovered while fixing the pocket-clog and are **deferred by explicit user decision**.
-They must be resolved to finish S2's money-shot + reproducibility exit criteria.
+Both resolved this session.
 
-- [ ] **Money-shot is not reliably dramatic.** The Vault never *legitimately* failed — its old FAIL was the
-      clog bug. Fixed, it's a clean PASS ~90. The engine clears doors ~4× faster than real crowds, so preset
-      tuning alone can't produce a robust FAIL→fix→better-score. **Pick one:** (a) fixed-dt stepping + a
-      firmed-up crowd for a reliable FAIL [recommended]; (b) recalibrate engine door-flow (slower throat);
-      (c) accept an honest WARN→PASS demo.
-- [ ] **App is non-deterministic vs tests.** `SimulationController.advance(to:)` steps at *variable
-      real-frame dt* while the engine samples emotions/density once per `step()`. Same seed ⇒ different
-      outcome in-app vs fixed-dt tests. **Fix:** accumulator pattern — carry leftover time, step in fixed
-      1/60 chunks. This is the prerequisite for option (a) above and for S2 criterion 6 (determinism).
+- [x] **App is non-deterministic vs tests.** ✅ **Fixed.** `SimulationController.advance(to:)` now banks
+      wall-clock time and discharges it in **fixed 1/60 steps** (accumulator, cap 8 steps/frame, drops
+      backlog) — byte-identical to the test driver. Guarded by `EgressTests.fixedStepDeterminism` (irregular
+      frame pacing must match a fixed-1/60 reference run). See [[egress-fixed-dt-determinism]].
+- [x] **Money-shot resolved → fire scenario** (user-approved). Empirically proven (`MoneyShotExperiment`,
+      now deleted): crowd tuning alone can never FAIL (score floor ~75 — the engine clears doors ~4–6×
+      too fast, so RISK+TIME penalties are always 0). Chose fire: `SampleVenue.moneyShotDemo()` = furnished
+      Vault + 150 crowd + ignition (5.5, 6.0) in the exit queue → **~55 casualties, FAIL**; the coach's
+      widen-to-1.7 m fix → **~32 casualties** — a "23 fewer casualties after the fix" chip
+      (`RunResult.casualtiesAverted`, new). NOTE: fire is always FAIL→FAIL on the *verdict* (any casualty =
+      rule 1, and the casualty penalty caps at 60 with 3 deaths, so the *score* barely moves) — the payoff
+      is the casualty drop, not a green verdict. See [[money-shot-scoring-constraint]].
 
 ---
 
@@ -98,42 +101,38 @@ They must be resolved to finish S2's money-shot + reproducibility exit criteria.
 
 ### 4.1 Finish S2 — sign off the submission floor (§6.5)
 
-- [ ] Fix `SimulationController` to **step at fixed dt** (accumulator). *(unblocks determinism + money-shot)*
-- [ ] Resolve the **money-shot** (choose a/b/c above; make FAIL→Apply→better-score reliable on device).
-- [ ] Verify score formula reproduces worked examples (**Concert Crush = 7, Office = 98**).
-- [ ] Verify **verdict order correct across all 6 branches**.
-- [ ] Verify **faster-is-slower reproduces** (non-monotonic panic sweep) — engine test exists; confirm.
-- [ ] Verify **determinism: same seed → identical clearance** (now unblocked by the dt fix).
-- [ ] Run the whole journey **on device, airplane mode, 3 consecutive runs, zero crashes**.
-- [ ] **Tag `golden-core`** and archive the build.
+- [x] Fix `SimulationController` to **step at fixed dt** (accumulator). ✅ done.
+- [x] Resolve the **money-shot** — fire scenario (see §3). ✅ done (FAIL→fix→fewer casualties, reliable).
+- [x] Verify score formula reproduces worked examples (Concert Crush = 7, Office = 98). ✅ `SafetyScoreTests` (formula-only, unaffected).
+- [x] Verify **verdict order correct across all 6 branches**. ✅ `VerdictRulesTests`.
+- [x] Verify **faster-is-slower reproduces**. ✅ `FasterIsSlowerTests`.
+- [x] Verify **determinism: same seed → identical clearance**. ✅ engine `SimulationTests` + new app `EgressTests.fixedStepDeterminism` (**runs green on iPhone 17 sim**, not just compiles).
+- [ ] Run the whole journey **on device, airplane mode, 3 consecutive runs, zero crashes**. ← USER (device).
+- [ ] **Tag `golden-core`** and archive the build. ← USER (device).
 
 ### 4.2 S3 — Evidence-grade (this is where 4s and 5s come from) (§6.6)
 
 Ordered by points-per-hour (the plan's order). **Evidence items sit above features.**
 
-**#1 — States & recovery matrix (§E.2)** — *highest value, cheap; criterion 02. The deliberate fallback is
-the single most valuable 10 s in the video.*
-- [ ] **Empty** — Simulate first-launch: dimmed blueprint grid + `NO SPACE LOADED` + one primary CTA to Spaces.
-- [ ] **Loading** — determinate indicator during first flow-field solve / model warm-up (never a frozen canvas).
-- [ ] **Unavailable feature** — canned coach on FM-unavailable, *identical card layout, different words* (done;
-      verify it reads as a distinct on-screen state for the reel).
-- [ ] **Failure / recovery** — thermal or frame-rate pressure → visible agent-count step-down notice + quiet
-      mono HUD line when above budget.
-- [ ] **Paused on return** — returning from background never auto-resumes; calm centred `PAUSED` panel.
-- [ ] **Permission** — plainly state "asks for nothing, sends nothing" (no fabricated denial screen).
-- [ ] **Offline** — airplane mode throughout (already true by construction; make sure it's *shown*).
+**#1 — States & recovery matrix (§E.2)** ✅ **DONE this session** (`Features/Simulate/SimulateStateViews.swift`).
+- [x] **Empty** — Simulate first-launch: `SimulateEmptyState`, dimmed blueprint grid + `NO SPACE LOADED` + Load-demo CTA.
+- [x] **Loading** — `SimulateLoadingState`, determinate "Solving evacuation routes…" over a real route-solve warm-up.
+- [x] **Unavailable feature** — canned coach on FM-unavailable, identical card layout (already live; provenance chip).
+- [x] **Failure / recovery** — `PerformanceNotice`: thermal (`.serious`/`.critical`) + above-validated-budget mono HUD line.
+- [x] **Paused on return** — `PausedOnReturnPanel`; `.background` holds the run, explicit resume, no auto-resume.
+- [x] **Permission** — Settings disclaimer now states "asks for no permissions — no network, location, camera or contacts".
+- [x] **Offline** — true by construction (offline `PrivacyInfo.xcprivacy`); stated in Settings.
 
 **#2 — Accessibility pass on the primary path (§5.6)** — *criterion 04; the v3 inversion's whole point.*
-- [ ] **Parametric editor primary path** — make element placement VoiceOver-operable (currently drag-only):
-  - [ ] "Add exit on wall {N/E/S/W}" control.
-  - [ ] Per-exit **clear-width stepper** (0.1 m increments).
-  - [ ] **Obstacle list** — select to reposition/remove; structural props show a disabled `LOCKED — STRUCTURAL` row.
-- [ ] **Colour-blind pattern fills** on the density canvas (`SimCanvasRenderer`): no-fill / sparse dots /
-      diagonal hatch / cross-hatch per band (currently colour-only).
-- [ ] Reduce-Motion full pass per the §5.6 table (audit every decorative animation).
-- [ ] Dynamic Type: Results/RALLY/reasons uncapped to AX5 without truncation; HUD collapses to summary line.
-- [ ] 44×44 pt hit targets everywhere; explicit focus order; every icon-only control has a label.
-- [ ] **Accessibility Inspector clean** on Results, RALLY, Spaces; VoiceOver completes the journey with no dead end.
+- [x] **Parametric editor primary path** ✅ **DONE** — VoiceOver-operable placement (`EditorModel` methods + `EditorRootView` inspector):
+  - [x] "Add exit on wall {Top/Right/Bottom/Left}" menu (`addExit(on:)`).
+  - [x] Per-exit **clear-width stepper** (0.1 m increments, clamped to `maxExitWidth`), + remove; sub-1.2 m flags itself.
+  - [x] **Object list** — nudge (±0.5 m) + remove for relocatable; structural rows show disabled `LOCKED — STRUCTURAL`.
+- [x] **Colour-blind pattern fills** ✅ **DONE** (`SimCanvasRenderer`): dots / diagonal hatch / cross-hatch per band, Settings toggle (default on).
+- [~] Reduce-Motion — banner + score ring done; new state panels use plain transitions. Full §5.6 table audit still needs a manual pass.
+- [~] Dynamic Type — new controls use dynamic fonts; AX5-no-truncation audit still manual.
+- [x] 44×44 pt hit targets / labels — new controls use standard `Stepper`/`Button` (≥44 pt) and all have a11y labels + hints.
+- [ ] **Accessibility Inspector clean** + full VoiceOver journey. ← USER (manual/device audit).
 
 **#3 — On-device coach (§3.5)** — *criterion 03; device + Xcode-27 only.*
 - [ ] Enable `EGRESS_FM_COACH`; verify @Generable/@Guide spellings compile on-device (Xcode 27).
@@ -148,7 +147,7 @@ the single most valuable 10 s in the video.*
 **#6–#8 — Feedback + recording aids**
 - [ ] Haptics feel-test on device (3 CoreHaptics patterns, 1-per-0.5 s budget) — built, unverifiable on sim.
 - [ ] Confirm the 3 SFX cues on device.
-- [ ] **Touch-indicator debug overlay** (`#if DEBUG`, 32 pt translucent circle on touch-down) — for the recording.
+- [x] **Touch-indicator debug overlay** ✅ **DONE** (`DesignSystem/TouchIndicators.swift`, `#if DEBUG`, passive window-level recogniser; applied at `AppRoot`).
 
 **S3 exit criteria (§6.6):**
 - [ ] Every §E.2 state reachable and visually resolved.
@@ -221,17 +220,17 @@ accessibility pass · the recording.
 | Case Study | ❌ not built | **by design — cut** |
 | Settings | ✅ done | |
 
-### 6.2 States matrix (§E.2 — floor, never cut)
+### 6.2 States matrix (§E.2 — floor, never cut) — ✅ COMPLETE (`SimulateStateViews.swift`)
 
 | State | Status |
 |---|---|
-| Empty | 🟡 Spaces yes; Simulate first-launch no |
-| Loading | ❌ |
-| Offline | ✅ by construction |
+| Empty | ✅ `SimulateEmptyState` (Simulate first-launch) |
+| Loading | ✅ `SimulateLoadingState` (route-solve warm-up) |
+| Offline | ✅ by construction + stated |
 | Unavailable feature | ✅ canned path |
-| Failure / recovery | ❌ |
-| Paused on return | ❌ |
-| Permission | 🟡 stated in Settings only |
+| Failure / recovery | ✅ `PerformanceNotice` (thermal + above-budget) |
+| Paused on return | ✅ `PausedOnReturnPanel` |
+| Permission | ✅ stated explicitly in Settings |
 
 ### 6.3 Accessibility (§5.6 — floor, never cut)
 
@@ -239,10 +238,10 @@ accessibility pass · the recording.
 |---|---|
 | Canvas = one a11y element | ✅ |
 | Results / score-ring / RALLY VoiceOver | ✅ |
-| Parametric editor primary path | ❌ **biggest gap** |
-| Colour-blind pattern fills (canvas) | ❌ |
-| Reduce Motion full pass | 🟡 |
-| Accessibility Inspector audit | ❌ |
+| Parametric editor primary path | ✅ **closed** (width steppers, add-exit, object list + LOCKED) |
+| Colour-blind pattern fills (canvas) | ✅ dots/hatch/cross-hatch + toggle |
+| Reduce Motion full pass | 🟡 core done; full audit manual |
+| Accessibility Inspector audit | ❌ USER (manual/device) |
 
 ---
 
