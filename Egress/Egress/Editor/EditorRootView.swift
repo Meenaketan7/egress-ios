@@ -13,6 +13,7 @@ struct EditorRootView: View {
     @State private var model: EditorModel
     @State private var goToSimulate = false
     @State private var showConfig = false
+    @State private var showPropLibrary = false
     @Environment(FeedbackServices.self)
     private var feedback: FeedbackServices?
     @Environment(\.dismiss)
@@ -30,18 +31,19 @@ struct EditorRootView: View {
 
     var body: some View {
         ZStack {
-            Color.egCanvasBase.ignoresSafeArea()
+            Color.egGround.ignoresSafeArea()
             VStack(spacing: 0) {
                 topChrome
                 canvasArea
                 toolTray
             }
         }
-        .preferredColorScheme(.dark) // this screen is the dark game-screen, whole-screen
+        .preferredColorScheme(.light) // cream editorial shell; the canvas alone stays a dark game-screen
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .toolbar(.hidden, for: .tabBar) // reclaim the space — no tab bar while editing
         .sheet(isPresented: $showConfig) { EditorConfigSheet(model: model) }
+        .sheet(isPresented: $showPropLibrary) { PropLibrarySheet(model: model) }
         .navigationDestination(isPresented: $goToSimulate) {
             SimulateScreen(venue: model.venue, config: model.config)
         }
@@ -57,7 +59,7 @@ struct EditorRootView: View {
                     HStack(spacing: 6) {
                         Text(model.displayName)
                             .font(EgressFont.display(.title3))
-                            .foregroundStyle(Color.egCanvasText)
+                            .foregroundStyle(Color.egTextPrimary)
                             .lineLimit(1)
                         Image(systemName: "pencil")
                             .font(.system(size: 12, weight: .semibold))
@@ -91,10 +93,10 @@ struct EditorRootView: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.egCanvasText)
-                .frame(width: 38, height: 38)
-                .background(Circle().fill(Color.egCanvasRaised))
-                .overlay(Circle().strokeBorder(Color.egCanvasSeparator, lineWidth: 1))
+                .foregroundStyle(Color.egTextPrimary)
+                .frame(width: 40, height: 40)
+                .background(Circle().fill(Color.egSurfaceRaised))
+                .overlay(Circle().strokeBorder(Color.egOutline, lineWidth: 1.5))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
@@ -104,10 +106,10 @@ struct EditorRootView: View {
         Button { goToSimulate = true } label: {
             Image(systemName: "play.fill")
                 .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(model.isSimulable ? Color.egCanvasBase : Color.egTextTertiary)
-                .frame(width: 44, height: 44)
-                .background(Circle().fill(model.isSimulable ? Color.egDataGreen : Color.egCanvasRaised))
-                .overlay(Circle().strokeBorder(model.isSimulable ? Color.clear : Color.egCanvasSeparator, lineWidth: 1))
+                .foregroundStyle(model.isSimulable ? Color.egOutline : Color.egTextTertiary)
+                .frame(width: 46, height: 46)
+                .background(Circle().fill(model.isSimulable ? Color.egDataGreen : Color.egSurfaceSunken))
+                .overlay(Circle().strokeBorder(model.isSimulable ? Color.egOutline : Color.egSeparator, lineWidth: 2))
         }
         .buttonStyle(.plain)
         .disabled(!model.isSimulable)
@@ -116,7 +118,9 @@ struct EditorRootView: View {
     }
 
     private var toolStatePill: some View {
-        Label(model.tool.actionLabel, systemImage: model.tool.symbol)
+        let label = model.tool == .obstacle ? model.obstaclePlacementLabel : model.tool.actionLabel
+        let symbol = model.tool == .obstacle ? model.activeProp.symbol : model.tool.symbol
+        return Label(label, systemImage: symbol)
             .font(.system(.caption2, weight: .bold))
             .fontWidth(.condensed)
             .textCase(.uppercase)
@@ -134,14 +138,19 @@ struct EditorRootView: View {
     private var canvasArea: some View {
         EditorCanvasView(model: model)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.egCanvasBase)
+            .clipShape(RoundedRectangle.egSquircle(EgressRadius.lg))
+            .overlay(RoundedRectangle.egSquircle(EgressRadius.lg).strokeBorder(Color.egOutline, lineWidth: 2))
             .overlay(alignment: .bottom) {
                 if model.selection != nil {
                     selectionPad
                         .padding(.horizontal, EgressSpacing.md)
-                        .padding(.bottom, EgressSpacing.sm)
+                        .padding(.bottom, EgressSpacing.md)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
+            .padding(.horizontal, EgressSpacing.md)
+            .padding(.bottom, EgressSpacing.xs)
             .animation(.easeInOut(duration: 0.2), value: model.selection)
     }
 
@@ -154,7 +163,7 @@ struct EditorRootView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(model.selectionTitle ?? "Selected")
                         .font(.system(.subheadline, weight: .semibold))
-                        .foregroundStyle(Color.egCanvasText)
+                        .foregroundStyle(Color.egTextPrimary)
                     if let detail = model.selectionDetail {
                         Text(detail).egMicroLabel()
                     }
@@ -176,15 +185,15 @@ struct EditorRootView: View {
             HStack(alignment: .center, spacing: EgressSpacing.lg) {
                 movePad
                 if model.selectionIsExit, let id = model.selectedExitID {
-                    Rectangle().fill(Color.egCanvasSeparator).frame(width: 1, height: 56)
+                    Rectangle().fill(Color.egSeparator).frame(width: 1, height: 56)
                     exitWidthControl(id)
                 }
                 Spacer(minLength: 0)
             }
         }
         .padding(EgressSpacing.md)
-        .background(RoundedRectangle.egSquircle(EgressRadius.lg).fill(Color.egCanvasRaised))
-        .overlay(RoundedRectangle.egSquircle(EgressRadius.lg).strokeBorder(Color.egCyan.opacity(0.55), lineWidth: 1))
+        .background(RoundedRectangle.egSquircle(EgressRadius.lg).fill(Color.egSurfaceRaised))
+        .overlay(RoundedRectangle.egSquircle(EgressRadius.lg).strokeBorder(Color.egOutline, lineWidth: 2))
     }
 
     /// A four-way arrow pad — nudges the selection half a metre. Locked (structural) props dim it out.
@@ -212,23 +221,23 @@ struct EditorRootView: View {
         } label: {
             Image(systemName: symbol)
                 .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(Color.egCanvasText)
+                .foregroundStyle(Color.egTextPrimary)
                 .frame(width: 34, height: 34)
-                .background(RoundedRectangle.egSquircle(EgressRadius.xs).fill(Color.egCanvasBase))
-                .overlay(RoundedRectangle.egSquircle(EgressRadius.xs).strokeBorder(Color.egCanvasSeparator, lineWidth: 1))
+                .background(RoundedRectangle.egSquircle(EgressRadius.xs).fill(Color.egSurfaceSunken))
+                .overlay(RoundedRectangle.egSquircle(EgressRadius.xs).strokeBorder(Color.egOutline, lineWidth: 1.5))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Move \(direction) half a metre")
     }
 
-    private func padButton(_ symbol: String, _ label: String, tint: Color = .egCanvasText, action: @escaping () -> Void) -> some View {
+    private func padButton(_ symbol: String, _ label: String, tint: Color = .egTextPrimary, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(tint)
                 .frame(width: 34, height: 34)
-                .background(RoundedRectangle.egSquircle(EgressRadius.xs).fill(Color.egCanvasBase))
-                .overlay(RoundedRectangle.egSquircle(EgressRadius.xs).strokeBorder(Color.egCanvasSeparator, lineWidth: 1))
+                .background(RoundedRectangle.egSquircle(EgressRadius.xs).fill(Color.egSurfaceSunken))
+                .overlay(RoundedRectangle.egSquircle(EgressRadius.xs).strokeBorder(Color.egOutline, lineWidth: 1.5))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
@@ -244,7 +253,7 @@ struct EditorRootView: View {
                 }
                 Text(String(format: "%.1f m", model.exitWidth(id)))
                     .egData(.subheadline)
-                    .foregroundStyle(Color.egCanvasText)
+                    .foregroundStyle(Color.egTextPrimary)
                     .frame(minWidth: 48)
                 padButton("plus", "Wider") {
                     model.setExitWidth(id, to: model.exitWidth(id) + EditorModel.exitStep)
@@ -270,8 +279,8 @@ struct EditorRootView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(EgressSpacing.md)
-        .background(RoundedRectangle.egSquircle(EgressRadius.lg).fill(Color.egCanvasRaised))
-        .overlay(RoundedRectangle.egSquircle(EgressRadius.lg).strokeBorder(Color.egCanvasSeparator, lineWidth: 1))
+        .background(RoundedRectangle.egSquircle(EgressRadius.lg).fill(Color.egSurfaceRaised))
+        .overlay(RoundedRectangle.egSquircle(EgressRadius.lg).strokeBorder(Color.egOutline, lineWidth: 2))
         .padding(.horizontal, EgressSpacing.md)
         .padding(.bottom, EgressSpacing.sm)
     }
@@ -289,33 +298,43 @@ struct EditorRootView: View {
 
     private func toolButton(_ tool: EditorTool) -> some View {
         let selected = model.tool == tool
+        // The Props tool is a prop-library launcher: it wears the active prop's icon/name and always
+        // reopens the picker on tap, so choosing a prop and choosing "the Props tool" are one action.
+        let isProps = tool == .obstacle
+        let symbol = isProps ? model.activeProp.symbol : tool.symbol
+        let title = isProps ? model.activeProp.name : tool.label
         return Button {
             model.tool = tool
             feedback?.haptics.play(.toolTap)
+            if isProps {
+                showPropLibrary = true
+            }
         } label: {
             VStack(spacing: 3) {
-                Image(systemName: tool.symbol).font(.system(size: 15, weight: .semibold))
-                Text(tool.label).font(.system(size: 8.5, weight: .semibold)).fontWidth(.condensed)
+                Image(systemName: symbol).font(.system(size: 15, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 8.5, weight: .semibold)).fontWidth(.condensed)
+                    .lineLimit(1).minimumScaleFactor(0.6)
             }
             .frame(width: 40, height: 44)
             .background(
                 RoundedRectangle.egSquircle(EgressRadius.xs)
-                    .fill(selected ? tool.tint.opacity(0.22) : Color.egCanvasBase)
+                    .fill(selected ? tool.tint.opacity(0.20) : Color.egSurfaceSunken)
             )
             .overlay(
                 RoundedRectangle.egSquircle(EgressRadius.xs)
-                    .strokeBorder(selected ? tool.tint : Color.egCanvasSeparator, lineWidth: selected ? 2 : 1)
+                    .strokeBorder(selected ? tool.tint : Color.egOutline, lineWidth: selected ? 2 : 1.5)
             )
-            .foregroundStyle(selected ? tool.tint : Color.egCanvasText.opacity(0.85))
+            .foregroundStyle(selected ? tool.tint : Color.egTextPrimary)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(tool.label) tool")
-        .accessibilityHint(tool.hint)
+        .accessibilityLabel(isProps ? "Props — \(model.activeProp.name)" : "\(tool.label) tool")
+        .accessibilityHint(isProps ? "Opens the prop library, then drag to place the chosen prop." : tool.hint)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
 
     private var toolDivider: some View {
-        RoundedRectangle(cornerRadius: 0.5).fill(Color.egCanvasSeparator).frame(width: 1, height: 52)
+        RoundedRectangle(cornerRadius: 0.5).fill(Color.egSeparator).frame(width: 1, height: 52)
     }
 }
 
@@ -475,36 +494,25 @@ private struct EditorConfigSheet: View {
                     .foregroundStyle(Color.egTextSecondary)
             }
             ForEach(model.obstacles) { object in
-                if object.isRelocatable {
-                    VStack(alignment: .leading, spacing: EgressSpacing.xs) {
-                        LabeledContent("Object \(object.id)", value: String(format: "%.1f × %.1f m", object.size.x, object.size.y))
-                        HStack(spacing: EgressSpacing.md) {
-                            nudge(object.id, "arrow.left", "left", Vec2(-0.5, 0))
-                            nudge(object.id, "arrow.right", "right", Vec2(0.5, 0))
-                            nudge(object.id, "arrow.up", "up", Vec2(0, -0.5))
-                            nudge(object.id, "arrow.down", "down", Vec2(0, 0.5))
-                            Spacer()
-                            Button(role: .destructive) {
-                                model.removeObstacle(object.id)
-                                feedback?.haptics.play(.deleteConfirmed)
-                            } label: {
-                                Image(systemName: "minus.circle")
-                            }
-                            .accessibilityLabel("Remove object \(object.id)")
+                VStack(alignment: .leading, spacing: EgressSpacing.xs) {
+                    LabeledContent(model.propName(for: object), value: String(format: "%.1f × %.1f m", object.size.x, object.size.y))
+                    HStack(spacing: EgressSpacing.md) {
+                        nudge(object.id, "arrow.left", "left", Vec2(-0.5, 0))
+                        nudge(object.id, "arrow.right", "right", Vec2(0.5, 0))
+                        nudge(object.id, "arrow.up", "up", Vec2(0, -0.5))
+                        nudge(object.id, "arrow.down", "down", Vec2(0, 0.5))
+                        Spacer()
+                        Button(role: .destructive) {
+                            model.removeObstacle(object.id)
+                            feedback?.haptics.play(.deleteConfirmed)
+                        } label: {
+                            Image(systemName: "minus.circle")
                         }
-                        .buttonStyle(.borderless)
+                        .accessibilityLabel("Remove \(model.propName(for: object)) \(object.id)")
                     }
-                    .padding(.vertical, 2)
-                } else {
-                    LabeledContent {
-                        Text("LOCKED — STRUCTURAL")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(Color.egTextSecondary)
-                    } label: {
-                        Label("Object \(object.id)", systemImage: "lock.fill")
-                    }
-                    .accessibilityHint("Structural element — routes are planned around it and it cannot be moved")
+                    .buttonStyle(.borderless)
                 }
+                .padding(.vertical, 2)
             }
         } header: {
             Text("Objects (\(model.obstacles.count))")

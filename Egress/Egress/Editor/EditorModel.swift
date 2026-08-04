@@ -149,6 +149,11 @@ final class EditorModel {
         } // leaving Select drops the picked element
     }
 
+    /// The prop the Props tool will place. Defaults to the freeform `.object` box, so the obstacle
+    /// tool behaves exactly as before until the user picks a named prop from the library sheet. Every
+    /// prop places with the same drag-to-size gesture; only its identity and simulation class differ.
+    var activeProp: EditorProp = .object
+
     private(set) var walls: [Wall] = []
     private(set) var exits: [Exit] = []
     private(set) var obstacles: [Obstacle] = []
@@ -290,7 +295,10 @@ final class EditorModel {
         case .obstacle:
             let (origin, size) = box(a, b)
             if size.x >= minObstacleSide, size.y >= minObstacleSide {
-                obstacles.append(Obstacle(id: allocID(), origin: origin, size: size, isRelocatable: true))
+                obstacles.append(Obstacle(
+                    id: allocID(), origin: origin, size: size,
+                    simClass: activeProp.simClass, kind: activeProp.kind
+                ))
                 return .placed
             }
             return (size.x > 0 || size.y > 0) ? .rejected : .none
@@ -358,10 +366,10 @@ final class EditorModel {
         selection = hit
         switch hit {
         case let .obstacle(id):
-            if let o = obstacles.first(where: { $0.id == id }), o.isRelocatable {
+            if let o = obstacles.first(where: { $0.id == id }) {
                 moveAnchor = .obstacle(id: id, origin: o.origin)
             } else {
-                moveAnchor = nil // structural props are locked (V5)
+                moveAnchor = nil
             }
         case let .exit(id):
             if let e = exits.first(where: { $0.id == id }) {
@@ -382,11 +390,10 @@ final class EditorModel {
         case let .obstacle(id, origin):
             guard let i = obstacles.firstIndex(where: { $0.id == id }) else { return }
             let o = obstacles[i]
-            let newOrigin = Vec2(
+            obstacles[i].origin = Vec2(
                 clampD(snapScalar(origin.x + delta.x), 0, max(0, worldWidth - o.size.x)),
                 clampD(snapScalar(origin.y + delta.y), 0, max(0, worldHeight - o.size.y))
             )
-            obstacles[i] = Obstacle(id: id, origin: newOrigin, size: o.size, isRelocatable: true)
         case let .exit(id, a, b):
             guard let i = exits.firstIndex(where: { $0.id == id }) else { return }
             exits[i] = Exit(id: id, a: clampInside(a + delta), b: clampInside(b + delta))
@@ -435,7 +442,8 @@ final class EditorModel {
         selection = nil
     }
 
-    /// Duplicate the selected object a couple of cells down-right, and select the copy.
+    /// Duplicate the selected object a couple of cells down-right, and select the copy. The copy keeps
+    /// the original's simulation class and prop identity.
     func duplicateSelection() {
         guard case let .obstacle(id) = selection, let o = obstacles.first(where: { $0.id == id }) else { return }
         let off = cellSize * 2
@@ -444,7 +452,7 @@ final class EditorModel {
             clampD(snapScalar(o.origin.y + off), 0, max(0, worldHeight - o.size.y))
         )
         let newID = allocID()
-        obstacles.append(Obstacle(id: newID, origin: origin, size: o.size, isRelocatable: o.isRelocatable))
+        obstacles.append(Obstacle(id: newID, origin: origin, size: o.size, simClass: o.simClass, kind: o.kind))
         selection = .obstacle(newID)
     }
 
@@ -454,11 +462,21 @@ final class EditorModel {
         switch selection {
         case let .obstacle(id):
             guard let o = obstacles.first(where: { $0.id == id }) else { return nil }
-            return o.isRelocatable ? "Object \(id)" : "Object \(id) (locked)"
+            return EditorProp.name(forKind: o.kind)
         case let .exit(id): return exits.contains { $0.id == id } ? "Exit \(id)" : nil
         case .ignition: return "Fire point"
         case nil: return nil
         }
+    }
+
+    /// The name of the prop stored on an obstacle ("Bar", "Object") — for the accessible objects list.
+    func propName(for obstacle: Obstacle) -> String {
+        EditorProp.name(forKind: obstacle.kind)
+    }
+
+    /// The imperative the tool pill shows while the Props tool is active — reflects the chosen prop.
+    var obstaclePlacementLabel: String {
+        activeProp.kind == EditorProp.object.kind ? "Place object" : "Place \(activeProp.name)"
     }
 
     var selectionDetail: String? {
@@ -487,12 +505,10 @@ final class EditorModel {
         return false
     }
 
-    /// Whether the selected element can be moved (structural props are locked, V5).
+    /// Whether the selected element can be moved. Every prop the author places is movable in the editor;
+    /// the sim-class governs only blocking and RALLY relocatability, not editor repositioning.
     var selectionIsMovable: Bool {
-        if case let .obstacle(id) = selection, let o = obstacles.first(where: { $0.id == id }) {
-            return o.isRelocatable
-        }
-        return selection != nil
+        selection != nil
     }
 
     /// The width of the selected exit, if one is selected — drives the pad's −/+ stepper.
@@ -560,7 +576,10 @@ final class EditorModel {
             let far = c(o.origin + o.size)
             let size = Vec2(far.x - origin.x, far.y - origin.y)
             guard size.x >= minObstacleSide, size.y >= minObstacleSide else { return nil }
-            return Obstacle(id: o.id, origin: origin, size: size, isRelocatable: o.isRelocatable)
+            var clamped = o
+            clamped.origin = origin
+            clamped.size = size
+            return clamped // keep simClass + kind through a resize
         }
         ignitions = ignitions.map(c)
         validateSelection()
@@ -643,16 +662,15 @@ final class EditorModel {
         obstacles.removeAll { $0.id == id }
     }
 
-    /// Nudge a relocatable object by `delta` metres, snapped and clamped inside the room. Structural
-    /// objects never move (V5), so the call is a no-op for them.
+    /// Nudge an object by `delta` metres, snapped and clamped inside the room. The author may reposition
+    /// any prop they placed; the sim-class only affects blocking and RALLY relocatability, not authoring.
     func nudgeObstacle(_ id: Int, by delta: Vec2) {
-        guard let i = obstacles.firstIndex(where: { $0.id == id }), obstacles[i].isRelocatable else { return }
+        guard let i = obstacles.firstIndex(where: { $0.id == id }) else { return }
         let o = obstacles[i]
-        let origin = Vec2(
+        obstacles[i].origin = Vec2(
             clampD(snapScalar(o.origin.x + delta.x), 0, max(0, worldWidth - o.size.x)),
             clampD(snapScalar(o.origin.y + delta.y), 0, max(0, worldHeight - o.size.y))
         )
-        obstacles[i] = Obstacle(id: id, origin: origin, size: o.size, isRelocatable: true)
     }
 
     /// Distance (metres) from `c` along unit `dir` to the first room boundary it meets.

@@ -2,16 +2,17 @@
 /// footprint — onto the grid, producing the `Set<GridCoord>` that `FlowField` floods
 /// around (build plan §2.4: "Impassable = walls, obstacle footprints, active fire cells").
 ///
-/// `isRelocatable` is deliberately ignored here: it governs only whether RALLY may later
-/// propose *moving* a prop, not whether the prop blocks movement. A relocatable table and a
-/// structural column are equally impassable while they sit where they are.
+/// A prop's `isRelocatable` flag is deliberately ignored here: it governs only whether RALLY may
+/// later propose *moving* a prop, not whether it blocks movement. A relocatable table and a
+/// structural column are equally impassable while they sit where they are. Decor is the one class
+/// that does not block — `blocksMovement` is `false` — so it is skipped (design: "Sim-inert").
 public enum BlockedCells {
     public static func of(_ venue: VenueModel) -> Set<GridCoord> {
         var blocked: Set<GridCoord> = []
         for wall in venue.walls {
             rasterise(wall, of: venue.geometry, into: &blocked)
         }
-        for obstacle in venue.obstacles {
+        for obstacle in venue.obstacles where obstacle.blocksMovement {
             rasterise(obstacle, of: venue.geometry, into: &blocked)
         }
         return blocked
@@ -27,7 +28,9 @@ public enum BlockedCells {
         for gridY in minCell.y ... maxCell.y {
             for gridX in minCell.x ... maxCell.x {
                 let cell = GridCoord(gridX, gridY)
-                if geometry.size.contains(cell) { blocked.insert(cell) }
+                if geometry.size.contains(cell) {
+                    blocked.insert(cell)
+                }
             }
         }
     }
@@ -46,8 +49,12 @@ public enum BlockedCells {
         var cell = start
         var err = dx - dy
         while true {
-            if geometry.size.contains(cell) { blocked.insert(cell) }
-            if cell == end { break }
+            if geometry.size.contains(cell) {
+                blocked.insert(cell)
+            }
+            if cell == end {
+                break
+            }
             let e2 = 2 * err
             if e2 > -dy {
                 err -= dy
