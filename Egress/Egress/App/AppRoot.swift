@@ -14,6 +14,10 @@ struct AppRoot: View {
                 .tabItem { Label("Learn", app: .learn) }
         }
         .tint(Color.egDataGreen) // the single accent
+        .preferredColorScheme(.light) // one committed cream look — never the system dark theme
+        #if DEBUG
+            .touchIndicators() // recording aid; compiled out of release (§E.3)
+        #endif
     }
 }
 

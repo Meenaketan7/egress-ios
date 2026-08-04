@@ -1,27 +1,26 @@
 import SwiftUI
 
 extension View {
-    /// Glass chrome (HUD, sheets): a material tinted with the app's dark glass tint.
-    /// Depth = a 1 pt hairline, never a shadow (design spec §3.3).
-    func egGlassSurface(cornerRadius: CGFloat = EgressRadius.md) -> some View {
-        self
-            .background {
-                ZStack {
-                    RoundedRectangle.egSquircle(cornerRadius).fill(.ultraThinMaterial)
-                    RoundedRectangle.egSquircle(cornerRadius).fill(Color.egGlassTint)
-                }
-            }
-            .overlay {
-                RoundedRectangle.egSquircle(cornerRadius)
-                    .strokeBorder(Color.egSeparator, lineWidth: 1)
-            }
-    }
-
-    /// Raised solid surface (cards): raised colour + hairline, no shadow.
+    /// Raised card — the signature look: a solid cream fill inside a chunky charcoal outline, no shadow.
+    /// Depth comes from the 2 pt outline, never a blur (design: "chunky charcoal outlines, cream ground").
     func egRaisedSurface(cornerRadius: CGFloat = EgressRadius.lg) -> some View {
         self
             .background {
                 RoundedRectangle.egSquircle(cornerRadius).fill(Color.egSurfaceRaised)
+            }
+            .overlay {
+                RoundedRectangle.egSquircle(cornerRadius)
+                    .strokeBorder(Color.egOutline, lineWidth: 2)
+            }
+    }
+
+    /// Sunken chip / inset field — a slightly darker cream with a soft tan hairline. Used for chips,
+    /// HUD pills and inline metrics that should read *inside* a card rather than lifting off it.
+    /// (Retains the old `egGlassSurface` name; the app has no blur glass in this theme.)
+    func egGlassSurface(cornerRadius: CGFloat = EgressRadius.md) -> some View {
+        self
+            .background {
+                RoundedRectangle.egSquircle(cornerRadius).fill(Color.egSurfaceSunken)
             }
             .overlay {
                 RoundedRectangle.egSquircle(cornerRadius)
@@ -50,6 +49,6 @@ extension View {
     }
     .padding(EgressSpacing.xl)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(Color.egCanvasBase)
-    .preferredColorScheme(.dark)
+    .background(Color.egGround)
+    .preferredColorScheme(.light)
 }

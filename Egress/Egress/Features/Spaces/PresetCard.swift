@@ -1,6 +1,8 @@
 import EgressEngine
 import SwiftUI
 
+// MARK: - PresetCard
+
 /// A gallery card for one furnished preset: a live mini-plan of the actual authored layout above the
 /// venue's name and stats. The thumbnail reuses `VenueScenery` — the same drawing the editor and the
 /// live sim use — so the card shows the real room the tap will load, not a stock illustration.
@@ -30,12 +32,13 @@ struct PresetCard: View {
         }
         .frame(width: 190)
         .padding(EgressSpacing.sm)
-        .background(RoundedRectangle.egSquircle(EgressRadius.md).fill(Color.egPropFill.opacity(0.4)))
-        .overlay(RoundedRectangle.egSquircle(EgressRadius.md).stroke(Color.egSeparator, lineWidth: 1))
+        .egRaisedSurface(cornerRadius: EgressRadius.md)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(preset.title). \(stats). \(preset.blurb)")
     }
 }
+
+// MARK: - PresetThumbnail
 
 /// A small top-down plan of a venue — room outline, props, walls and exits — drawn on the dark canvas.
 /// The grid is omitted (too busy at thumbnail scale); everything else matches the full canvas exactly.

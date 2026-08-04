@@ -1,5 +1,7 @@
 import Foundation
 
+// MARK: - Fix
+
 /// A concrete, geometry-grounded change RALLY can propose to a venue (§2.13) — the honest core of the
 /// coach, independent of any AI prose. Each case names an element and the exact new measurement, so a
 /// fix can be shown ("Widen Exit 0 to 1.2 m"), feasibility-checked, applied to produce a new venue,
@@ -51,7 +53,8 @@ public enum Fix: Equatable, Sendable {
             }
             guard obstacle.isRelocatable else { return .rejected("that element is fixed in place") }
             guard Self.within(origin, venue.geometry),
-                  Self.within(origin + obstacle.size, venue.geometry) else {
+                  Self.within(origin + obstacle.size, venue.geometry) else
+            {
                 return .rejected("would leave the venue bounds")
             }
             return .feasible
@@ -69,7 +72,10 @@ public enum Fix: Equatable, Sendable {
             updated.exits = venue.exits + [Exit(id: nextID, a: a, b: b)]
         case let .relocateObstacle(id, origin):
             updated.obstacles = venue.obstacles.map {
-                $0.id == id ? Obstacle(id: id, origin: origin, size: $0.size, isRelocatable: $0.isRelocatable) : $0
+                guard $0.id == id else { return $0 }
+                var moved = $0
+                moved.origin = origin
+                return moved // keep simClass + kind — only the origin moves
             }
         }
         return updated
@@ -87,12 +93,18 @@ public enum Fix: Equatable, Sendable {
         point.x >= 0 && point.x <= geometry.worldWidth && point.y >= 0 && point.y <= geometry.worldHeight
     }
 
-    private static func metres(_ value: Double) -> String { "\(String(format: "%.1f", value)) m" }
+    private static func metres(_ value: Double) -> String {
+        "\(String(format: "%.1f", value)) m"
+    }
 }
+
+// MARK: - FixFeasibility
 
 /// The outcome of a V5 feasibility check — feasible, or rejected with a human reason.
 public enum FixFeasibility: Equatable, Sendable {
     case feasible
     case rejected(String)
-    public var isFeasible: Bool { self == .feasible }
+    public var isFeasible: Bool {
+        self == .feasible
+    }
 }

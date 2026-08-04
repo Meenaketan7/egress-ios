@@ -18,9 +18,20 @@ struct RunResult: Identifiable, Equatable {
     /// The score of the run this one is measured against (the pre-fix run), or `nil` for a first run —
     /// drives the "before → after" delta after an Apply.
     let baselineScore: Int?
+    /// Casualties in the pre-fix run, carried across an Apply. With a fire scenario the Safety Score's
+    /// casualty term saturates, so the score barely moves even as deaths fall — this makes the fix's real
+    /// impact (fewer casualties) visible in its own right.
+    var baselineCasualties: Int?
 
     /// The point improvement over the baseline run, when this result followed an Apply.
     var improvement: Int? {
         baselineScore.map { score.value - $0 }
+    }
+
+    /// How many fewer people were hurt after the fix (positive = lives saved), when this run followed an
+    /// Apply and either run involved casualties.
+    var casualtiesAverted: Int? {
+        guard let before = baselineCasualties, before > 0 || metrics.casualties > 0 else { return nil }
+        return before - metrics.casualties
     }
 }

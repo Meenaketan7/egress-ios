@@ -46,12 +46,16 @@ struct ResultsSheet: View {
     /// streams). `nil` while it's being produced, which the card shows as a brief "thinking" state.
     @State private var advice: CoachAdvice?
 
-    @Environment(FeedbackServices.self) private var feedback: FeedbackServices?
+    @Environment(FeedbackServices.self)
+    private var feedback: FeedbackServices?
     /// The score-ring sweep is decorative motion: under Reduce Motion the number cross-fades to its
     /// final value instead of sweeping, and the reveal ticks are skipped (§5.6).
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
 
-    private var level: VerdictLevel { result.verdict.level }
+    private var level: VerdictLevel {
+        result.verdict.level
+    }
 
     var body: some View {
         ScrollView {
@@ -64,8 +68,7 @@ struct ResultsSheet: View {
             }
             .padding(EgressSpacing.xl)
         }
-        .background(Color.egCanvasBase)
-        .preferredColorScheme(.dark)
+        .background(Color.egGround)
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .onAppear {
@@ -79,7 +82,9 @@ struct ResultsSheet: View {
         }
         .task(id: result.id) {
             advice = await CoachProvider.shared.advise(for: result, venue: result.venue)
-            if advice != nil { feedback?.haptics.play(.rallyAppears) } // §5.5: 1 soft tap per card
+            if advice != nil {
+                feedback?.haptics.play(.rallyAppears)
+            } // §5.5: 1 soft tap per card
         }
         .task(id: result.id) {
             await runScoreReveal()
@@ -94,14 +99,19 @@ struct ResultsSheet: View {
             let step = Motion.scoreRingDuration / Double(Motion.scoreRevealTickCeiling)
             for _ in 0 ..< Motion.scoreRevealTickCeiling {
                 try? await Task.sleep(for: .seconds(step))
-                if Task.isCancelled { return }
+                if Task.isCancelled {
+                    return
+                }
                 feedback?.haptics.play(.scoreTick)
             }
         }
         switch level {
-        case .pass: feedback?.sound.play(.verdictPass); feedback?.haptics.play(.verdictPass)
-        case .warn: feedback?.sound.play(.sting); feedback?.haptics.play(.verdictWarn)
-        case .fail: feedback?.sound.play(.verdictFail); feedback?.haptics.play(.verdictFail)
+        case .pass: feedback?.sound.play(.verdictPass)
+            feedback?.haptics.play(.verdictPass)
+        case .warn: feedback?.sound.play(.sting)
+            feedback?.haptics.play(.verdictWarn)
+        case .fail: feedback?.sound.play(.verdictFail)
+            feedback?.haptics.play(.verdictFail)
         }
     }
 
@@ -140,7 +150,26 @@ struct ResultsSheet: View {
             if let improvement = result.improvement {
                 improvementChip(improvement)
             }
+            if let saved = result.casualtiesAverted, saved != 0 {
+                casualtyChip(saved)
+            }
         }
+    }
+
+    /// The casualties before → after an Apply. With a fire the Safety Score's casualty term saturates, so
+    /// the score chip barely moves even as lives are saved — this states the real gain outright.
+    private func casualtyChip(_ saved: Int) -> some View {
+        let good = saved > 0
+        return Label(
+            good ? "\(saved) fewer casualties after the fix" : "\(-saved) more casualties after the fix",
+            systemImage: good ? "cross.case.fill" : "exclamationmark.triangle.fill"
+        )
+        .egData(.footnote)
+        .foregroundStyle(good ? Color.egDataGreen : Color.egVerdictFail)
+        .padding(.horizontal, EgressSpacing.md)
+        .padding(.vertical, EgressSpacing.sm)
+        .egGlassSurface(cornerRadius: EgressRadius.xs)
+        .accessibilityLabel(good ? "\(saved) fewer casualties after the fix" : "\(-saved) more casualties after the fix")
     }
 
     /// The before → after delta shown after an Apply & re-run.
@@ -175,8 +204,7 @@ struct ResultsSheet: View {
 
     // MARK: Reasons
 
-    @ViewBuilder
-    private var reasons: some View {
+    @ViewBuilder private var reasons: some View {
         if result.verdict.reasons.isEmpty {
             Text("No safety issues flagged for this run.")
                 .egBody(.callout)
@@ -212,7 +240,6 @@ struct ResultsSheet: View {
     /// RALLY's voice on the run: a headline, a grounded diagnosis (or a PASS summary + joke), the
     /// Apply & re-run action when there's a fix, and a provenance badge that's honest about whether the
     /// on-device model or the canned fallback wrote it (§3.5.4).
-    @ViewBuilder
     private var coachCard: some View {
         VStack(alignment: .leading, spacing: EgressSpacing.md) {
             HStack(spacing: EgressSpacing.sm) {
@@ -220,7 +247,9 @@ struct ResultsSheet: View {
                     .accessibilityHidden(true) // decorative — RALLY's state is in the headline text (§5.6)
                 Text(advice?.headline ?? "RALLY").egMicroLabel()
                 Spacer(minLength: EgressSpacing.sm)
-                if let source = advice?.source { sourceBadge(source) }
+                if let source = advice?.source {
+                    sourceBadge(source)
+                }
             }
 
             if let advice {

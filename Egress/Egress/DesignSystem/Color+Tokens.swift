@@ -4,7 +4,7 @@ import UIKit
 // MARK: - Hex initialisers
 
 extension UIColor {
-    /// 24-bit hex, e.g. 0x34E27A.
+    /// 24-bit hex, e.g. 0x2B2622.
     convenience init(hexValue: UInt, alpha: CGFloat = 1) {
         self.init(
             red: CGFloat((hexValue >> 16) & 0xFF) / 255,
@@ -16,72 +16,109 @@ extension UIColor {
 }
 
 extension Color {
-    /// 24-bit hex, e.g. 0x0A0E14.
+    /// 24-bit hex, e.g. 0xF4E8D0.
     init(hex: UInt, opacity: Double = 1) {
         self.init(uiColor: UIColor(hexValue: hex, alpha: opacity))
     }
 }
 
-/// Resolves dark vs light automatically. Used only for chrome that adapts.
-private func egDynamic(dark: UInt, light: UInt) -> Color {
-    Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? UIColor(hexValue: dark)
-            : UIColor(hexValue: light)
-    })
-}
+// MARK: - Tokens — "Chunky charcoal outlines · cream ground · dark game-screen"
 
-// MARK: - Tokens (design spec §5)
+//
+// The palette is one committed warm-editorial look (Egress App UI design request), not an adaptive
+// dark/light pair, so every token is a FIXED value and the app is pinned to `.light` at the root.
+// The one dark region is the simulation canvas: it stays a warm near-black game-screen so agents,
+// density and hazards read, while the phone, HUD, cards and controls take the friendly cream shell.
+// Hex values are lifted directly from the design source.
 
 extension Color {
-    // Canvas & grid — FIXED. The sim canvas + HUD stay dark even in Light Mode
-    // (enforced at the view level with .preferredColorScheme(.dark) on that subtree).
-    static let egCanvasBase = Color(hex: 0x0A0E14)
-    static let egCanvasGrid = Color(hex: 0x1B2430) // 0.25 m dot grid
-    static let egCanvasGridMajor = Color(hex: 0x26323F) // every 4 cells = 1.0 m
-    static let egGlassTint = Color(hex: 0x131A24, opacity: 0.72) // over a material
+    // MARK: Cream shell — the chrome (adaptive-free; always cream)
 
-    // Chrome surfaces & text — ADAPTIVE
-    static let egSurfaceRaised = egDynamic(dark: 0x161E2A, light: 0xF5F7FA)
-    static let egSeparator = egDynamic(dark: 0x2A3644, light: 0xD8DEE6) // 1 pt hairlines
-    static let egTextPrimary = egDynamic(dark: 0xE8EEF5, light: 0x0E1620)
-    static let egTextSecondary = egDynamic(dark: 0x9AA9BA, light: 0x4A5766)
-    static let egTextTertiary = egDynamic(dark: 0x74849A, light: 0x6B7889)
+    /// Page ground behind every chrome screen — the warm cream everything floats on.
+    static let egGround = Color(hex: 0xF4E8D0)
+    /// Raised card fill — a shade lighter than the ground so cards lift off it.
+    static let egSurfaceRaised = Color(hex: 0xFBF4E4)
+    /// Sunken / inset fill — chips, fields, secondary rows.
+    static let egSurfaceSunken = Color(hex: 0xEADFC7)
 
-    // Accents — the ONLY green; cyan is measurement-only
-    static let egDataGreen = egDynamic(dark: 0x34E27A, light: 0x0F9D52)
-    static let egCyan = egDynamic(dark: 0x4FD8FF, light: 0x0A7EA4)
+    /// The signature chunky outline — charcoal, drawn thick around cards & controls.
+    static let egOutline = Color(hex: 0x2B2622)
+    /// Hairline divider inside the cream — a soft tan, not the charcoal outline.
+    static let egSeparator = Color(hex: 0xCBB899)
 
-    // Density bands — FIXED, opacity baked in (comfortable renders NO fill; color kept for reference)
-    static let egDensityComfortable = Color(hex: 0x1E5C46, opacity: 0.25)
-    static let egDensityCongested = Color(hex: 0xC98A2E, opacity: 0.45)
-    static let egDensityAtRisk = Color(hex: 0xE8632B, opacity: 0.65)
-    static let egDensityCrush = Color(hex: 0xFF2D4B, opacity: 0.85)
+    // Ink — warm charcoal → brown → taupe
+    static let egTextPrimary = Color(hex: 0x2B2622) // charcoal headings & body
+    static let egTextSecondary = Color(hex: 0x5A4D40) // brown — captions, stats
+    static let egTextTertiary = Color(hex: 0x9E8E73) // taupe — micro-labels, hints
 
-    // Hazards — FIXED
-    static let egHazardFire = Color(hex: 0xFF6B1A)
-    static let egHazardFireCore = Color(hex: 0xFFD24A)
-    static let egHazardSmoke = Color(hex: 0x8B95A3) // opacity applied per-use (variable)
-    static let egHazardFlood = Color(hex: 0x1E63D6) // deep blue — never reads as a dimension line
+    // MARK: Accents
 
-    // Verdict — ADAPTIVE
-    static let egVerdictPass = egDynamic(dark: 0x34E27A, light: 0x0F9D52)
-    static let egVerdictWarn = egDynamic(dark: 0xF5B93B, light: 0x9A6B00)
-    static let egVerdictFail = egDynamic(dark: 0xFF3B5C, light: 0xC2001E)
+    /// The ONE green — primary buttons, PASS, toggles, the app tint. Sage.
+    static let egDataGreen = Color(hex: 0x8DA85A)
+    /// Sage shade for pressed states / green outlines.
+    static let egDataGreenDeep = Color(hex: 0x738A4A)
+    /// Measurement-only accent (dimension lines, "cyan" role). Teal.
+    static let egCyan = Color(hex: 0x4F9691)
 
-    // Agents — FIXED (uneasy/panicked deliberately share caution/danger ramps; staff = violet)
-    static let egAgentCalm = Color(hex: 0xB8C6D6)
-    static let egAgentUneasy = Color(hex: 0xF5B93B)
-    static let egAgentPanicked = Color(hex: 0xFF3B5C)
-    static let egAgentStaff = Color(hex: 0x7B5CFF)
+    /// Amber/gold — the wordmark squiggle, WARN, the seven-segment display.
+    static let egAccentGold = Color(hex: 0xD6A63C)
+    /// Terracotta — fire, at-risk, the nightclub mark, live warnings.
+    static let egAccentTerracotta = Color(hex: 0xC65D32)
+    /// Brick red — casualties, crush, FAIL.
+    static let egAccentBrick = Color(hex: 0x9E3521)
+    /// Soft pink — "Featured" badges, quiz cards.
+    static let egAccentPink = Color(hex: 0xF3B6C0)
+    /// Plum — staff agents / a rarer categorical hue.
+    static let egAccentPlum = Color(hex: 0x8A5E74)
 
-    /// RALLY chassis — FIXED (visor/antenna take the verdict tint)
-    static let egRallyBody = Color(hex: 0xC7D3E0)
+    // MARK: Dark game-screen — the simulation canvas (FIXED dark; forced via CanvasHost)
 
-    // PROPOSED — outside the plan's token table; pending contrast verification (spec §5).
-    static let egPropFill = Color(hex: 0x232E3C)
-    static let egPropEdge = Color(hex: 0x3A4859)
-    static let egPropStructural = Color(hex: 0x1C242F)
-    static let egPropStructuralOutline = Color(hex: 0x46566A)
-    static let egDecorTile = Color(hex: 0x141C26)
+    // Values are the "Design Tokens" sheet's GROUND · SURFACE set for the dark canvas world.
+
+    static let egCanvasBase = Color(hex: 0x2B2622) // canvas.base — warm dark game-screen
+    static let egCanvasRaised = Color(hex: 0x4C4239) // surface.raised — dark cards/menus/panels on the canvas
+    static let egCanvasSeparator = Color(hex: 0x5A4D40) // separator — dividers on the dark canvas
+    static let egCanvasText = Color(hex: 0xF4E8D0) // text.primary — cream text/labels on the dark canvas
+    static let egCanvasGrid = Color(hex: 0x4C4239) // 0.25 m dot grid
+    static let egCanvasGridMajor = Color(hex: 0x5A4D40) // every 4 cells = 1.0 m
+    static let egGlassTint = Color(hex: 0x2B2622, opacity: 0.78) // over a material, on the canvas
+
+    // Density bands — on the dark canvas; opacity baked in (comfortable renders NO fill).
+    static let egDensityComfortable = Color(hex: 0x26301A, opacity: 0.25) // faint green glow
+    static let egDensityCongested = Color(hex: 0xD6A63C, opacity: 0.42) // gold
+    static let egDensityAtRisk = Color(hex: 0xC65D32, opacity: 0.58) // terracotta
+    static let egDensityCrush = Color(hex: 0x9E3521, opacity: 0.82) // brick
+
+    // Density colour-blind textures (§5.6) — a brighter tint of each band, drawn as dots/hatch so the
+    // crowding band reads by pattern as well as hue.
+    static let egDensityCongestedPattern = Color(hex: 0xE7C56E, opacity: 0.75)
+    static let egDensityAtRiskPattern = Color(hex: 0xD67A52, opacity: 0.82)
+    static let egDensityCrushPattern = Color(hex: 0xF3B6C0, opacity: 0.9)
+
+    // Hazards — on the dark canvas
+    static let egHazardFire = Color(hex: 0xCF6A2C) // hazard.fire — terracotta flame
+    static let egHazardFireCore = Color(hex: 0xE8B84A) // gold core
+    static let egHazardSmoke = Color(hex: 0x8A7B66) // warm grey-brown (opacity per-use)
+    static let egHazardFlood = Color(hex: 0x356178) // deep teal-blue — never reads as a dimension line
+
+    // Verdict — sage / gold / brick (reads on both cream and the dark canvas)
+    static let egVerdictPass = Color(hex: 0x8DA85A)
+    static let egVerdictWarn = Color(hex: 0xD6A63C)
+    static let egVerdictFail = Color(hex: 0x9E3521)
+
+    // Agents — on the dark canvas. Calm reads pale; unease/panic climb the caution/danger ramp; staff = plum.
+    static let egAgentCalm = Color(hex: 0xE4D6B6) // pale cream pixel-person
+    static let egAgentUneasy = Color(hex: 0xD6A63C) // gold
+    static let egAgentPanicked = Color(hex: 0xC65D32) // terracotta
+    static let egAgentStaff = Color(hex: 0x8A5E74) // plum
+
+    /// RALLY chassis — the tan pixel-robot (visor/antenna take the verdict tint).
+    static let egRallyBody = Color(hex: 0xCBB899)
+
+    // Props & structure on the canvas — warm browns (the furniture boxes).
+    static let egPropFill = Color(hex: 0x6E5140) // prop.fill · relocatable — reads on the lighter base
+    static let egPropEdge = Color(hex: 0x836E50)
+    static let egPropStructural = Color(hex: 0x4A4037)
+    static let egPropStructuralOutline = Color(hex: 0x6B5D4E)
+    static let egDecorTile = Color(hex: 0x2B2723)
 }

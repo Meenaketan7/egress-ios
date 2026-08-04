@@ -9,6 +9,8 @@ struct LearnRootView: View {
             } description: {
                 Text("Guides, case studies, and quizzes will appear here.")
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.egGround)
             .navigationTitle("Learn")
         }
     }
