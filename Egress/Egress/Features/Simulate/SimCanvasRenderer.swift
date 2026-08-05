@@ -19,6 +19,17 @@ struct CanvasProjection {
         origin = CGPoint(x: (viewSize.width - drawnWidth) / 2, y: (viewSize.height - drawnHeight) / 2)
     }
 
+    /// Camera-driven projection for the free-form editor board (design's pan/zoom canvas). Unlike the
+    /// fit-to-view initialiser, this maps world→screen through an explicit `EditorCamera`: a uniform
+    /// `camera.pointsPerMetre` scale with the camera's world `center` pinned to the middle of the view.
+    init(camera: EditorCamera, viewSize: CGSize) {
+        scale = camera.pointsPerMetre
+        origin = CGPoint(
+            x: viewSize.width / 2 - CGFloat(camera.center.x) * scale,
+            y: viewSize.height / 2 - CGFloat(camera.center.y) * scale
+        )
+    }
+
     /// World point (metres) → screen point (points).
     func point(_ world: Vec2) -> CGPoint {
         CGPoint(x: origin.x + CGFloat(world.x) * scale, y: origin.y + CGFloat(world.y) * scale)
@@ -51,6 +62,10 @@ enum SimulationRenderer {
         into context: inout GraphicsContext
     ) {
         VenueScenery.drawGrid(venue: venue, projection: projection, into: &context)
+        VenueScenery.drawExteriorShade(
+            venue.blockedCells, origin: .zero, cellSize: venue.geometry.cellSize, projection: projection, into: &context
+        )
+        VenueScenery.drawWater(venue.water, projection: projection, into: &context)
         VenueScenery.drawObstacles(venue.obstacles, projection: projection, into: &context)
         VenueScenery.drawWalls(venue.walls, projection: projection, into: &context)
         drawDensity(

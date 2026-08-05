@@ -8,6 +8,12 @@ public struct VenueModel: Identifiable, Equatable, Sendable {
     public var walls: [Wall]
     public var exits: [Exit]
     public var obstacles: [Obstacle]
+    /// Standing-water flood zones — static impassable regions the crowd routes around (§2.7 hazards).
+    public var water: [WaterZone]
+    /// Extra impassable cells beyond the walls/obstacles/water — the free-form editor puts the room's
+    /// *exterior* here (see `RoomEnclosure`) so only the walls' enclosed interior is floor. Empty by
+    /// default, so a venue built without it behaves exactly as if the whole grid were floor.
+    public var blockedCells: Set<GridCoord>
     public var decor: [DecorTile]
 
     public init(
@@ -18,6 +24,8 @@ public struct VenueModel: Identifiable, Equatable, Sendable {
         walls: [Wall] = [],
         exits: [Exit] = [],
         obstacles: [Obstacle] = [],
+        water: [WaterZone] = [],
+        blockedCells: Set<GridCoord> = [],
         decor: [DecorTile] = []
     ) {
         self.id = id
@@ -27,6 +35,8 @@ public struct VenueModel: Identifiable, Equatable, Sendable {
         self.walls = walls
         self.exits = exits
         self.obstacles = obstacles
+        self.water = water
+        self.blockedCells = blockedCells
         self.decor = decor
     }
 
@@ -35,10 +45,13 @@ public struct VenueModel: Identifiable, Equatable, Sendable {
         geometry.worldWidth * geometry.worldHeight
     }
 
-    /// Net floor area available to people, in m² (gross minus obstacle footprints).
-    /// Note: a first-order model — overlapping obstacles would double-count.
+    /// Net floor area available to people, in m² (gross minus obstacle footprints, minus any
+    /// out-of-room `blockedCells` so a walls-enclosed shape reports its real floor, not the bounding
+    /// box). A first-order model — overlapping obstacles would double-count.
     public var netFloorArea: Double {
-        max(0, grossFloorArea - obstacles.reduce(0) { $0 + $1.area })
+        let cell = geometry.cellSize
+        let exterior = Double(blockedCells.count) * cell * cell
+        return max(0, grossFloorArea - exterior - obstacles.reduce(0) { $0 + $1.area })
     }
 
     /// Simulable only with a positive grid and at least one exit.

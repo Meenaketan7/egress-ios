@@ -27,6 +27,110 @@ enum VenueScenery {
         context.fill(major, with: .color(.egCanvasGridMajor))
     }
 
+    /// The free-form editor's dot grid (design's ReactFlow-style board): the 0.25 m grid tiled across
+    /// the *visible* world rect rather than a fixed room, so it fills the canvas at any pan/zoom. Minor
+    /// dots drop out when the camera is too far out for them to read; the whole grid is skipped when even
+    /// the 1 m majors would collide, keeping deep zoom-outs clean and cheap.
+    static func drawEditorGrid(projection: CanvasProjection, viewSize: CGSize, into context: inout GraphicsContext) {
+        let cell = SafetyStandards.cellSize
+        let cellPts = projection.length(cell)
+        guard cellPts > 0, cellPts * 4 >= 6 else { return } // too far out — the grid would just be mud
+        let topLeft = projection.world(.zero)
+        let bottomRight = projection.world(CGPoint(x: viewSize.width, y: viewSize.height))
+        let minX = (topLeft.x / cell).rounded(.down) * cell
+        let minY = (topLeft.y / cell).rounded(.down) * cell
+        let minorVisible = cellPts >= 5
+        let dot: CGFloat = 1.5
+        var minor = Path()
+        var major = Path()
+        var row = Int((minY / cell).rounded())
+        var gridY = minY
+        while gridY <= bottomRight.y {
+            var col = Int((minX / cell).rounded())
+            var gridX = minX
+            while gridX <= bottomRight.x {
+                let isMajor = col % 4 == 0 && row % 4 == 0
+                if isMajor || minorVisible {
+                    let centre = projection.point(Vec2(gridX, gridY))
+                    let rect = CGRect(x: centre.x - dot / 2, y: centre.y - dot / 2, width: dot, height: dot)
+                    if isMajor {
+                        major.addEllipse(in: rect)
+                    } else {
+                        minor.addEllipse(in: rect)
+                    }
+                }
+                gridX += cell
+                col += 1
+            }
+            gridY += cell
+            row += 1
+        }
+        context.fill(minor, with: .color(.egCanvasGrid))
+        context.fill(major, with: .color(.egCanvasGridMajor))
+    }
+
+    /// Dim a set of out-of-room cells — the exterior of the walls' enclosed room (`RoomEnclosure`) — so a
+    /// non-rectangular shape (L, T, angled) reads at a glance in both the editor and the live run. Cells
+    /// are in the grid frame; `origin` is the world-metre position of cell (0,0): the editor offsets by
+    /// its content bounds, the normalised sim venue uses zero. Empty set ⇒ nothing drawn (room = grid).
+    static func drawExteriorShade(
+        _ cells: Set<GridCoord>, origin: Vec2, cellSize: Double, projection: CanvasProjection, into context: inout GraphicsContext
+    ) {
+        guard !cells.isEmpty else { return }
+        let side = projection.length(cellSize) + 0.5 // +0.5 closes seams between cells
+        var path = Path()
+        for coord in cells {
+            let world = Vec2(origin.x + Double(coord.x) * cellSize, origin.y + Double(coord.y) * cellSize)
+            let point = projection.point(world)
+            path.addRect(CGRect(x: point.x, y: point.y, width: side, height: side))
+        }
+        context.fill(path, with: .color(.black.opacity(0.34)))
+    }
+
+    /// Standing-water flood zones — a translucent teal fill with a light wave hatch, drawn beneath the
+    /// obstacles. Static and impassable: the crowd routes around it exactly as it would a wall, so it
+    /// reads as a distinct *no-go* hazard rather than furniture (design's HAZARDS · Water).
+    static func drawWater(_ zones: [WaterZone], projection: CanvasProjection, into context: inout GraphicsContext) {
+        for zone in zones {
+            let origin = projection.point(zone.origin)
+            let rect = CGRect(
+                x: origin.x, y: origin.y,
+                width: projection.length(zone.size.x), height: projection.length(zone.size.y)
+            )
+            let radius = min(4, rect.width / 4)
+            let shape = Path(roundedRect: rect, cornerRadius: radius)
+            context.fill(shape, with: .color(.egHazardFlood.opacity(0.5)))
+            context.stroke(shape, with: .color(.egHazardFlood), lineWidth: 1.5)
+            drawWaveHatch(rect, into: &context)
+        }
+    }
+
+    /// A few horizontal ripples clipped to a flood zone — the "≈" that sells the water read.
+    private static func drawWaveHatch(_ rect: CGRect, into context: inout GraphicsContext) {
+        guard rect.width > 10, rect.height > 8 else { return }
+        let amp = min(2.5, rect.height * 0.06)
+        let wavelength = max(8, rect.width / 6)
+        let spacing = max(6, rect.height / 4)
+        context.drawLayer { layer in
+            layer.clip(to: Path(rect))
+            var y = rect.minY + spacing
+            while y < rect.maxY {
+                var path = Path()
+                path.move(to: CGPoint(x: rect.minX, y: y))
+                var x = rect.minX
+                while x < rect.maxX {
+                    let mid = x + wavelength / 2
+                    path.addQuadCurve(to: CGPoint(x: min(mid, rect.maxX), y: y), control: CGPoint(x: x + wavelength / 4, y: y - amp))
+                    let end = mid + wavelength / 2
+                    path.addQuadCurve(to: CGPoint(x: min(end, rect.maxX), y: y), control: CGPoint(x: mid + wavelength / 4, y: y + amp))
+                    x = end
+                }
+                layer.stroke(path, with: .color(.egCanvasText.opacity(0.28)), lineWidth: 1)
+                y += spacing
+            }
+        }
+    }
+
     /// Impassable wall segments — solid structural strokes, drawn a touch wider than a person so a
     /// walled throat visibly pinches the crowd. This is what the engine rasterises into blocked cells.
     static func drawWalls(_ walls: [Wall], projection: CanvasProjection, into context: inout GraphicsContext) {

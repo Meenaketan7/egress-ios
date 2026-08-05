@@ -102,6 +102,36 @@ public struct Obstacle: Identifiable, Equatable, Sendable {
     }
 }
 
+// MARK: - WaterZone
+
+/// A standing-water flood zone (design's HAZARDS · Water). Unlike fire — which spreads and harms —
+/// water is a *static* no-go region: the crowd routes around it from the first frame, exactly as it
+/// would a wall. Modelled as an axis-aligned box that rasterises into blocked cells; it never spreads,
+/// never injures, and (being floor, not furniture) is excluded from `netFloorArea`.
+public struct WaterZone: Identifiable, Equatable, Sendable {
+    public let id: Int
+    /// Axis-aligned box: lower corner + size, in metres.
+    public var origin: Vec2
+    public var size: Vec2
+
+    public init(id: Int, origin: Vec2, size: Vec2) {
+        self.id = id
+        self.origin = origin
+        self.size = size
+    }
+
+    /// Flooded area, in m².
+    public var area: Double {
+        size.x * size.y
+    }
+
+    /// True if a world point falls inside the box (half-open on the far edges, matching `Obstacle`).
+    public func contains(_ p: Vec2) -> Bool {
+        p.x >= origin.x && p.x < origin.x + size.x &&
+            p.y >= origin.y && p.y < origin.y + size.y
+    }
+}
+
 // MARK: - DecorTile
 
 /// Sim-inert decoration — rendered, but ignored by the simulation.

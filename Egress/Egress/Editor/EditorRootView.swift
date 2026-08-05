@@ -14,6 +14,11 @@ struct EditorRootView: View {
     @State private var goToSimulate = false
     @State private var showConfig = false
     @State private var showPropLibrary = false
+    /// The live size of the canvas card, so the "fit to content" button can frame the drawing.
+    @State private var canvasSize: CGSize = .zero
+    /// Frame the drawing once, the first time we learn the canvas size, so a preset or draft opens
+    /// centred rather than parked at the camera's default corner.
+    @State private var didInitialFit = false
     @Environment(FeedbackServices.self)
     private var feedback: FeedbackServices?
     @Environment(\.dismiss)
@@ -138,9 +143,23 @@ struct EditorRootView: View {
     private var canvasArea: some View {
         EditorCanvasView(model: model)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.egCanvasBase)
+            .background {
+                GeometryReader { proxy in
+                    Color.egCanvasBase
+                        .onChange(of: proxy.size, initial: true) { _, size in
+                            canvasSize = size
+                            if !didInitialFit, size.width > 1, size.height > 1 {
+                                didInitialFit = true
+                                model.camera.fit(model.contentBounds, in: size)
+                            }
+                        }
+                }
+            }
             .clipShape(RoundedRectangle.egSquircle(EgressRadius.lg))
             .overlay(RoundedRectangle.egSquircle(EgressRadius.lg).strokeBorder(Color.egOutline, lineWidth: 2))
+            .overlay(alignment: .topTrailing) {
+                zoomCluster.padding(EgressSpacing.sm)
+            }
             .overlay(alignment: .bottom) {
                 if model.selection != nil {
                     selectionPad
@@ -152,6 +171,38 @@ struct EditorRootView: View {
             .padding(.horizontal, EgressSpacing.md)
             .padding(.bottom, EgressSpacing.xs)
             .animation(.easeInOut(duration: 0.2), value: model.selection)
+    }
+
+    /// Floating camera controls over the dark canvas — zoom in / fit-to-content / zoom out. Discoverable
+    /// (and VoiceOver-operable, since a pinch isn't) counterparts to the two-finger pan and pinch.
+    private var zoomCluster: some View {
+        VStack(spacing: EgressSpacing.xs) {
+            zoomButton("plus.magnifyingglass", "Zoom in") {
+                model.camera.zoom(by: 1.3, aroundWorld: model.camera.center)
+            }
+            zoomButton("arrow.down.forward.and.arrow.up.backward", "Fit to content") {
+                model.camera.fit(model.contentBounds, in: canvasSize)
+            }
+            zoomButton("minus.magnifyingglass", "Zoom out") {
+                model.camera.zoom(by: 0.77, aroundWorld: model.camera.center)
+            }
+        }
+    }
+
+    private func zoomButton(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
+        Button {
+            action()
+            feedback?.haptics.play(.toolTap)
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.egCanvasText)
+                .frame(width: 34, height: 34)
+                .background(RoundedRectangle.egSquircle(EgressRadius.xs).fill(Color.egCanvasRaised.opacity(0.92)))
+                .overlay(RoundedRectangle.egSquircle(EgressRadius.xs).strokeBorder(Color.egCanvasSeparator, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 
     /// The floating pad that appears over the canvas when an item is selected — move arrows plus that
@@ -363,19 +414,21 @@ private struct EditorConfigSheet: View {
                 }
 
                 Section {
-                    Stepper(value: $model.widthMetres, in: EditorModel.minRoom ... EditorModel.maxRoom, step: 0.5) {
-                        LabeledContent("Width", value: String(format: "%.1f m", model.widthMetres))
-                    }
-                    .onChange(of: model.widthMetres) { _, _ in model.clampToBounds() }
-                    Stepper(value: $model.heightMetres, in: EditorModel.minRoom ... EditorModel.maxRoom, step: 0.5) {
-                        LabeledContent("Depth", value: String(format: "%.1f m", model.heightMetres))
-                    }
-                    .onChange(of: model.heightMetres) { _, _ in model.clampToBounds() }
+                    LabeledContent("Auto size", value: String(format: "%.1f × %.1f m", model.worldWidth, model.worldHeight))
                     LabeledContent("Floor area", value: String(format: "%.0f m²", model.venue.netFloorArea))
+                    Button {
+                        model.fitBaseToContent()
+                        feedback?.haptics.play(.toolTap)
+                    } label: {
+                        Label("Fit room to drawing", systemImage: "arrow.down.forward.and.arrow.up.backward")
+                    }
+                    .disabled(model.walls.isEmpty && model.exits.isEmpty && model.obstacles.isEmpty && model.waterZones.isEmpty)
                 } header: {
                     Text("Room")
                 } footer: {
-                    Text("Each grid square is 0.25 m — four squares make a metre. Every wall, door and object snaps to it.")
+                    Text(
+                        "No fixed size — the room is whatever your walls enclose, and grows as you draw beyond it. Draw the shape you want, then fit the floor tightly to it. Each grid square is 0.25 m."
+                    )
                 }
 
                 Section("Crowd") {
@@ -413,7 +466,8 @@ private struct EditorConfigSheet: View {
                     } label: {
                         Label("Clear layout", systemImage: "trash")
                     }
-                    .disabled(model.walls.isEmpty && model.exits.isEmpty && model.obstacles.isEmpty && model.ignitions.isEmpty)
+                    .disabled(model.walls.isEmpty && model.exits.isEmpty && model.obstacles.isEmpty && model.ignitions.isEmpty && model
+                        .waterZones.isEmpty)
                 }
             }
             .scrollContentBackground(.hidden)
@@ -519,7 +573,8 @@ private struct EditorConfigSheet: View {
         }
     }
 
-    /// Editor-placed fire (§2.7): a count and a clear action for the ignition points on the canvas.
+    /// Editor-placed hazards (§2.7): fire ignition points and standing-water flood zones — each with a
+    /// count and a clear action, the accessible counterpart to the Fire/Water tools on the canvas.
     private var hazardsSection: some View {
         Section {
             if model.ignitions.isEmpty {
@@ -527,7 +582,7 @@ private struct EditorConfigSheet: View {
                     .font(.callout)
                     .foregroundStyle(Color.egTextSecondary)
             } else {
-                LabeledContent("Ignition points", value: "\(model.ignitions.count)")
+                LabeledContent("Fire ignition points", value: "\(model.ignitions.count)")
                 Button(role: .destructive) {
                     model.clearIgnitions()
                     feedback?.haptics.play(.deleteConfirmed)
@@ -535,10 +590,25 @@ private struct EditorConfigSheet: View {
                     Label("Clear fire", systemImage: "flame")
                 }
             }
+            if model.waterZones.isEmpty {
+                Text("No water placed. Pick the Water tool and drag a box to flood an area.")
+                    .font(.callout)
+                    .foregroundStyle(Color.egTextSecondary)
+            } else {
+                LabeledContent("Water zones", value: "\(model.waterZones.count)")
+                Button(role: .destructive) {
+                    model.clearWater()
+                    feedback?.haptics.play(.deleteConfirmed)
+                } label: {
+                    Label("Clear water", systemImage: "water.waves")
+                }
+            }
         } header: {
-            Text("Hazards (\(model.ignitions.count))")
+            Text("Hazards (\(model.ignitions.count + model.waterZones.count))")
         } footer: {
-            Text("Fire spreads from each point once the run starts — the crowd has to route around it.")
+            Text(
+                "Fire spreads from each point once the run starts; water is a standing flood that never spreads. Either way, the crowd has to route around it."
+            )
         }
     }
 
