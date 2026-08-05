@@ -24,6 +24,28 @@ struct VenueTests {
         #expect(!o.contains(Vec2(1.9, 3))) // left of origin
     }
 
+    @Test("WaterZone area and containment (half-open box, like an obstacle)")
+    func waterZone() {
+        let w = WaterZone(id: 1, origin: Vec2(2, 2), size: Vec2(1, 3))
+        #expect(w.area == 3)
+        #expect(w.contains(Vec2(2.5, 4))) // inside
+        #expect(!w.contains(Vec2(2.5, 5))) // on the far edge → excluded
+        #expect(!w.contains(Vec2(1.9, 3))) // left of origin
+    }
+
+    @Test("Water is floor, not furniture — it does not reduce net floor area")
+    func waterFloorArea() {
+        let v = VenueModel(
+            id: 1,
+            name: "Test",
+            type: .office,
+            geometry: GridGeometry(size: GridSize(width: 40, height: 40)),
+            exits: [Exit(id: 1, a: Vec2(0, 0), b: Vec2(0, 1))],
+            water: [WaterZone(id: 1, origin: Vec2(1, 1), size: Vec2(2, 2))]
+        )
+        #expect(v.netFloorArea == 100) // the flood zone is floor the crowd routes around, not lost area
+    }
+
     @Test("Every venue type has a non-empty display name")
     func venueTypes() {
         #expect(VenueType.allCases.count >= 3)
@@ -58,6 +80,24 @@ struct VenueTests {
         )
         #expect(v.grossFloorArea == 100) // 10 m × 10 m
         #expect(v.netFloorArea == 96) // minus the 4 m² obstacle
+    }
+
+    @Test("Out-of-room blocked cells are subtracted from net floor area")
+    func enclosedFloorArea() {
+        // 40×40 cells = 10 m × 10 m → 100 m² gross. Block a quarter (400 cells) as room exterior.
+        let size = GridSize(width: 40, height: 40)
+        var exterior: Set<GridCoord> = []
+        for y in 0 ..< 20 {
+            for x in 0 ..< 20 {
+                exterior.insert(GridCoord(x, y))
+            }
+        } // 400 cells = 25 m²
+        let v = VenueModel(
+            id: 1, name: "L", type: .office, geometry: GridGeometry(size: size),
+            exits: [Exit(id: 1, a: Vec2(0, 5), b: Vec2(0, 6))], blockedCells: exterior
+        )
+        #expect(v.grossFloorArea == 100)
+        #expect(v.netFloorArea == 75) // 100 − 25 m² of out-of-room floor
     }
 
     @Test("A venue needs an exit to be valid")

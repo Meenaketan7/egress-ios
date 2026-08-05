@@ -27,7 +27,7 @@ enum EditorToolGroup: String, CaseIterable, Identifiable {
 /// are drawn by dragging a line; obstacle by dragging a box; erase removes the nearest element under a
 /// tap; fire drops an ignition point with a tap.
 enum EditorTool: String, CaseIterable, Identifiable {
-    case select, wall, exit, erase, obstacle, fire
+    case select, wall, exit, erase, obstacle, fire, water
 
     var id: String {
         rawValue
@@ -37,7 +37,7 @@ enum EditorTool: String, CaseIterable, Identifiable {
         switch self {
         case .select, .wall, .exit, .erase: .build
         case .obstacle: .props
-        case .fire: .hazards
+        case .fire, .water: .hazards
         }
     }
 
@@ -49,6 +49,7 @@ enum EditorTool: String, CaseIterable, Identifiable {
         case .obstacle: "Object"
         case .erase: "Erase"
         case .fire: "Fire"
+        case .water: "Water"
         }
     }
 
@@ -61,6 +62,7 @@ enum EditorTool: String, CaseIterable, Identifiable {
         case .obstacle: "Place object"
         case .erase: "Erase"
         case .fire: "Drop fire"
+        case .water: "Fill water"
         }
     }
 
@@ -72,6 +74,7 @@ enum EditorTool: String, CaseIterable, Identifiable {
         case .obstacle: "square.dashed"
         case .erase: "minus.circle"
         case .fire: "flame.fill"
+        case .water: "water.waves"
         }
     }
 
@@ -82,8 +85,9 @@ enum EditorTool: String, CaseIterable, Identifiable {
         case .wall: "Drag to draw an impassable wall."
         case .exit: "Drag along an edge to place a doorway."
         case .obstacle: "Drag a box to drop furniture people route around."
-        case .erase: "Tap a wall, exit, object, or fire to remove it."
+        case .erase: "Tap a wall, exit, object, water, or fire to remove it."
         case .fire: "Tap to drop a fire ignition point the crowd must avoid."
+        case .water: "Drag a box to flood an area the crowd routes around."
         }
     }
 
@@ -95,6 +99,7 @@ enum EditorTool: String, CaseIterable, Identifiable {
         case .obstacle: .egPropEdge
         case .erase: .egVerdictFail
         case .fire: .egHazardFire
+        case .water: .egHazardFlood
         }
     }
 }
@@ -106,6 +111,7 @@ enum EditorSelection: Equatable {
     case obstacle(Int)
     case exit(Int)
     case ignition(Int)
+    case water(Int)
 }
 
 // MARK: - EditPlacement
@@ -154,9 +160,15 @@ final class EditorModel {
     /// prop places with the same drag-to-size gesture; only its identity and simulation class differ.
     var activeProp: EditorProp = .object
 
+    /// The pan/zoom camera over the free-form canvas (design's ReactFlow-style board). View-state, but
+    /// it lives here with `tool`/`selection`/`draft` so gestures and the ± buttons drive one source.
+    var camera = EditorCamera()
+
     private(set) var walls: [Wall] = []
     private(set) var exits: [Exit] = []
     private(set) var obstacles: [Obstacle] = []
+    /// Standing-water flood zones the crowd routes around — a static hazard, sibling to fire (§2.7).
+    private(set) var waterZones: [WaterZone] = []
     /// Fire ignition points in world metres — fed straight into `SimulationConfig.ignition` (§2.7).
     private(set) var ignitions: [Vec2] = []
     /// The element the Select tool has picked (drives the floating move/config pad), or `nil`.
@@ -168,6 +180,10 @@ final class EditorModel {
 
     /// Monotonic id source for exits and obstacles (the engine keys RALLY fixes off these ids).
     private var nextID = 1
+
+    /// Memoised room-exterior cells (see `roomExterior`), keyed on a signature of the enclosure inputs
+    /// so a pure camera pan never re-floods — only a real wall/exit/bounds change recomputes it.
+    @ObservationIgnored private var exteriorCache: (signature: Int, cells: Set<GridCoord>)?
 
     static let minCrowd = 5
     static let maxCrowd = 400
@@ -222,18 +238,108 @@ final class EditorModel {
     }
 
     var worldWidth: Double {
-        geometry.worldWidth
+        contentBounds.size.x
     }
 
     var worldHeight: Double {
-        geometry.worldHeight
+        contentBounds.size.y
     }
 
-    /// The grid the room's metre extent maps to (0.25 m cells).
+    /// The author-space rectangle that will simulate — the "room". It's the base floor (0,0 …
+    /// width,height) *unioned* with the bounding box of everything drawn, snapped out to whole cells.
+    /// So the walls decide the shape and size (draw beyond the base floor and the room grows to fit),
+    /// yet a fresh draft and every furnished preset still start at a sensible, fully-drawing room —
+    /// the fixed-rectangle constraint is gone without cutting off any open floor. When nothing is drawn
+    /// outside the base floor (the common case, and every preset) this is byte-identical to the old grid.
+    var contentBounds: WorldRect {
+        var minX = 0.0, minY = 0.0
+        var maxX = widthMetres, maxY = heightMetres // base floor anchored at the origin
+        if let raw = rawContentBounds {
+            minX = min(minX, raw.origin.x)
+            minY = min(minY, raw.origin.y)
+            maxX = max(maxX, raw.maxCorner.x)
+            maxY = max(maxY, raw.maxCorner.y)
+        }
+        // Snap outwards to whole cells so the derived grid is always exact.
+        minX = (minX / cellSize).rounded(.down) * cellSize
+        minY = (minY / cellSize).rounded(.down) * cellSize
+        maxX = (maxX / cellSize).rounded(.up) * cellSize
+        maxY = (maxY / cellSize).rounded(.up) * cellSize
+        return WorldRect(origin: Vec2(minX, minY), size: Vec2(maxX - minX, maxY - minY))
+    }
+
+    /// The tight bounding box of the *drawn* content only (walls, exits, objects, water, fire) —
+    /// ignoring the base floor. `nil` when nothing has been drawn. Drives "fit to content".
+    private var rawContentBounds: WorldRect? {
+        var minX = Double.infinity, minY = Double.infinity
+        var maxX = -Double.infinity, maxY = -Double.infinity
+        func include(_ p: Vec2) {
+            minX = min(minX, p.x)
+            minY = min(minY, p.y)
+            maxX = max(maxX, p.x)
+            maxY = max(maxY, p.y)
+        }
+        for w in walls {
+            include(w.a)
+            include(w.b)
+        }
+        for e in exits {
+            include(e.a)
+            include(e.b)
+        }
+        for o in obstacles {
+            include(o.origin)
+            include(o.origin + o.size)
+        }
+        for z in waterZones {
+            include(z.origin)
+            include(z.origin + z.size)
+        }
+        for ig in ignitions {
+            include(ig)
+        }
+        guard minX.isFinite else { return nil }
+        return WorldRect(origin: Vec2(minX, minY), size: Vec2(maxX - minX, maxY - minY))
+    }
+
+    /// The grid the room's metre extent maps to (0.25 m cells), derived from `contentBounds`.
     var geometry: GridGeometry {
-        let w = max(1, Int((widthMetres / cellSize).rounded()))
-        let h = max(1, Int((heightMetres / cellSize).rounded()))
+        let b = contentBounds
+        let w = max(1, Int((b.size.x / cellSize).rounded()))
+        let h = max(1, Int((b.size.y / cellSize).rounded()))
         return GridGeometry(size: GridSize(width: w, height: h))
+    }
+
+    /// The room's **exterior** cells in the normalised grid frame — everything outside the shape the
+    /// walls enclose (`RoomEnclosure`), so an L-, T- or angled room simulates as the drawn shape rather
+    /// than its bounding rectangle. Empty when the walls don't enclose anything (bare presets, sketches),
+    /// leaving the whole grid as floor. Memoised on a signature of walls/exits/bounds so panning the
+    /// camera never re-floods.
+    var roomExterior: Set<GridCoord> {
+        let off = contentBounds.origin
+        let geo = geometry
+        var hasher = Hasher()
+        hasher.combine(geo.size.width)
+        hasher.combine(geo.size.height)
+        hasher.combine(off)
+        for w in walls {
+            hasher.combine(w.a)
+            hasher.combine(w.b)
+        }
+        for e in exits {
+            hasher.combine(e.a)
+            hasher.combine(e.b)
+        }
+        let signature = hasher.finalize()
+        if let cache = exteriorCache, cache.signature == signature {
+            return cache.cells
+        }
+
+        let normWalls = walls.map { Wall(a: $0.a - off, b: $0.b - off) }
+        let normExits = exits.map { Exit(id: $0.id, a: $0.a - off, b: $0.b - off) }
+        let cells = RoomEnclosure.exterior(walls: normWalls, exits: normExits, geometry: geo)
+        exteriorCache = (signature, cells)
+        return cells
     }
 
     var displayName: String {
@@ -241,23 +347,40 @@ final class EditorModel {
         return trimmed.isEmpty ? type.displayName : trimmed
     }
 
-    /// The immutable venue the simulator runs — a snapshot of the current draft.
+    /// The immutable venue the simulator runs — a snapshot of the current draft, **normalised** into the
+    /// engine's coordinate frame: every element is translated by `-contentBounds.origin` so the drawing
+    /// (which may extend left/above the base floor in author space) lands in `[0,W] × [0,H]`. The engine
+    /// itself never sees the free-form canvas — only this tight bounded grid.
     var venue: VenueModel {
-        VenueModel(
+        let off = contentBounds.origin
+        return VenueModel(
             id: 0,
             name: displayName,
             type: type,
             geometry: geometry,
-            walls: walls,
-            exits: exits,
-            obstacles: obstacles
+            walls: walls.map { Wall(a: $0.a - off, b: $0.b - off) },
+            exits: exits.map { Exit(id: $0.id, a: $0.a - off, b: $0.b - off) },
+            obstacles: obstacles.map { var o = $0
+                o.origin = $0.origin - off
+                return o
+            },
+            water: waterZones.map { var z = $0
+                z.origin = $0.origin - off
+                return z
+            },
+            blockedCells: roomExterior
         )
     }
 
     /// Reproducible config — a fixed seed so re-running the same draft replays the same crowd, plus any
-    /// editor-placed fire so the authored hazard actually burns in the run.
+    /// editor-placed fire (translated by the same offset as `venue`, so ignition points still land on
+    /// the right cells) so the authored hazard actually burns in the run.
     var config: SimulationConfig {
-        SimulationConfig(agentCount: crowd, maxValidatedAgents: 300, seed: 42, ignition: ignitions)
+        let off = contentBounds.origin
+        return SimulationConfig(
+            agentCount: crowd, maxValidatedAgents: 300, seed: 42,
+            ignition: ignitions.map { $0 - off }
+        )
     }
 
     // MARK: Editing
@@ -302,6 +425,13 @@ final class EditorModel {
                 return .placed
             }
             return (size.x > 0 || size.y > 0) ? .rejected : .none
+        case .water:
+            let (origin, size) = box(a, b)
+            if size.x >= minObstacleSide, size.y >= minObstacleSide {
+                waterZones.append(WaterZone(id: allocID(), origin: origin, size: size))
+                return .placed
+            }
+            return (size.x > 0 || size.y > 0) ? .rejected : .none
         case .erase:
             return erase(near: b) ? .erased : .none
         case .fire:
@@ -315,11 +445,12 @@ final class EditorModel {
         }
     }
 
-    /// Remove every drawn element and hazard (room size, type and crowd are kept).
+    /// Remove every drawn element and hazard (base floor size, type and crowd are kept).
     func clearElements() {
         walls.removeAll()
         exits.removeAll()
         obstacles.removeAll()
+        waterZones.removeAll()
         ignitions.removeAll()
         selection = nil
         draft = nil
@@ -333,6 +464,35 @@ final class EditorModel {
         }
     }
 
+    /// Remove every standing-water flood zone.
+    func clearWater() {
+        waterZones.removeAll()
+        if case .water = selection {
+            selection = nil
+        }
+    }
+
+    /// Re-anchor the room to exactly what's been drawn: translate every element so the drawing's
+    /// bounding box sits at the origin, and shrink the base floor to match. This is how the room becomes
+    /// *any* size — draw a small (or huge, or L-shaped) layout, then fit the floor tightly to it.
+    func fitBaseToContent() {
+        guard let raw = rawContentBounds, raw.size.x > 0, raw.size.y > 0 else { return }
+        let off = raw.origin
+        walls = walls.map { Wall(a: $0.a - off, b: $0.b - off) }
+        exits = exits.map { Exit(id: $0.id, a: $0.a - off, b: $0.b - off) }
+        obstacles = obstacles.map { var o = $0
+            o.origin = $0.origin - off
+            return o
+        }
+        waterZones = waterZones.map { var z = $0
+            z.origin = $0.origin - off
+            return z
+        }
+        ignitions = ignitions.map { $0 - off }
+        widthMetres = (raw.size.x / cellSize).rounded() * cellSize
+        heightMetres = (raw.size.y / cellSize).rounded() * cellSize
+    }
+
     // MARK: Select & move (§3.5 direct manipulation)
 
     private let selectRadius = 0.9
@@ -340,6 +500,7 @@ final class EditorModel {
         case obstacle(id: Int, origin: Vec2)
         case exit(id: Int, a: Vec2, b: Vec2)
         case ignition(index: Int, point: Vec2)
+        case water(id: Int, origin: Vec2)
     }
 
     /// True while a selected element is being dragged.
@@ -379,27 +540,33 @@ final class EditorModel {
             if ignitions.indices.contains(i) {
                 moveAnchor = .ignition(index: i, point: ignitions[i])
             }
+        case let .water(id):
+            if let z = waterZones.first(where: { $0.id == id }) {
+                moveAnchor = .water(id: id, origin: z.origin)
+            } else {
+                moveAnchor = nil
+            }
         }
     }
 
-    /// Track a drag-move — the element follows the finger, snapped and clamped inside the room.
+    /// Track a drag-move — the element follows the finger, snapped to the grid. Nothing clamps to a room
+    /// any more: the canvas is free, so an element may be dragged anywhere (the room grows to fit it).
     func updateMove(from start: Vec2, to current: Vec2) {
         guard let anchor = moveAnchor else { return }
         let delta = snap(current) - snap(start)
         switch anchor {
         case let .obstacle(id, origin):
             guard let i = obstacles.firstIndex(where: { $0.id == id }) else { return }
-            let o = obstacles[i]
-            obstacles[i].origin = Vec2(
-                clampD(snapScalar(origin.x + delta.x), 0, max(0, worldWidth - o.size.x)),
-                clampD(snapScalar(origin.y + delta.y), 0, max(0, worldHeight - o.size.y))
-            )
+            obstacles[i].origin = Vec2(snapScalar(origin.x + delta.x), snapScalar(origin.y + delta.y))
         case let .exit(id, a, b):
             guard let i = exits.firstIndex(where: { $0.id == id }) else { return }
-            exits[i] = Exit(id: id, a: clampInside(a + delta), b: clampInside(b + delta))
+            exits[i] = Exit(id: id, a: a + delta, b: b + delta)
         case let .ignition(index, point):
             guard ignitions.indices.contains(index) else { return }
-            ignitions[index] = clampInside(point + delta)
+            ignitions[index] = point + delta
+        case let .water(id, origin):
+            guard let i = waterZones.firstIndex(where: { $0.id == id }) else { return }
+            waterZones[i].origin = Vec2(snapScalar(origin.x + delta.x), snapScalar(origin.y + delta.y))
         }
     }
 
@@ -416,17 +583,19 @@ final class EditorModel {
             translateExit(id, by: delta)
         case let .ignition(i):
             guard ignitions.indices.contains(i) else { return }
-            ignitions[i] = clampInside(snap(ignitions[i] + delta))
+            ignitions[i] = snap(ignitions[i] + delta)
+        case let .water(id):
+            nudgeWater(id, by: delta)
         case nil:
             break
         }
     }
 
-    /// Translate an exit bodily by `delta`, keeping both ends inside the room.
+    /// Translate an exit bodily by `delta` (free canvas — no clamp; the room grows to fit).
     func translateExit(_ id: Int, by delta: Vec2) {
         guard let i = exits.firstIndex(where: { $0.id == id }) else { return }
         let e = exits[i]
-        exits[i] = Exit(id: id, a: snap(clampInside(e.a + delta)), b: snap(clampInside(e.b + delta)))
+        exits[i] = Exit(id: id, a: snap(e.a + delta), b: snap(e.b + delta))
     }
 
     /// Delete whatever is selected.
@@ -437,6 +606,7 @@ final class EditorModel {
         case let .ignition(i): if ignitions.indices.contains(i) {
                 ignitions.remove(at: i)
             }
+        case let .water(id): waterZones.removeAll { $0.id == id }
         case nil: break
         }
         selection = nil
@@ -447,10 +617,7 @@ final class EditorModel {
     func duplicateSelection() {
         guard case let .obstacle(id) = selection, let o = obstacles.first(where: { $0.id == id }) else { return }
         let off = cellSize * 2
-        let origin = Vec2(
-            clampD(snapScalar(o.origin.x + off), 0, max(0, worldWidth - o.size.x)),
-            clampD(snapScalar(o.origin.y + off), 0, max(0, worldHeight - o.size.y))
-        )
+        let origin = Vec2(snapScalar(o.origin.x + off), snapScalar(o.origin.y + off))
         let newID = allocID()
         obstacles.append(Obstacle(id: newID, origin: origin, size: o.size, simClass: o.simClass, kind: o.kind))
         selection = .obstacle(newID)
@@ -465,6 +632,7 @@ final class EditorModel {
             return EditorProp.name(forKind: o.kind)
         case let .exit(id): return exits.contains { $0.id == id } ? "Exit \(id)" : nil
         case .ignition: return "Fire point"
+        case let .water(id): return waterZones.contains { $0.id == id } ? "Water" : nil
         case nil: return nil
         }
     }
@@ -487,6 +655,9 @@ final class EditorModel {
         case let .exit(id):
             return exits.contains { $0.id == id } ? String(format: "%.1f m clear", exitWidth(id)) : nil
         case .ignition: return "Ignition point"
+        case let .water(id):
+            guard let z = waterZones.first(where: { $0.id == id }) else { return nil }
+            return String(format: "%.1f × %.1f m flooded", z.size.x, z.size.y)
         case nil: return nil
         }
     }
@@ -531,6 +702,9 @@ final class EditorModel {
         for o in obstacles {
             consider(.obstacle(o.id), distanceToBox(p, origin: o.origin, size: o.size))
         }
+        for z in waterZones {
+            consider(.water(z.id), distanceToBox(p, origin: z.origin, size: z.size))
+        }
         for e in exits {
             consider(.exit(e.id), distanceToSegment(p, e.a, e.b))
         }
@@ -552,37 +726,11 @@ final class EditorModel {
         case let .ignition(i): if !ignitions.indices.contains(i) {
                 selection = nil
             }
+        case let .water(id): if !waterZones.contains(where: { $0.id == id }) {
+                selection = nil
+            }
         case nil: break
         }
-    }
-
-    /// Clamp a point inside the room (no snap — callers snap when they need to).
-    private func clampInside(_ v: Vec2) -> Vec2 {
-        Vec2(clampD(v.x, 0, worldWidth), clampD(v.y, 0, worldHeight))
-    }
-
-    /// Pull any element endpoints back inside the room after a resize so nothing floats off-canvas.
-    /// Call this when width/height changes. Degenerate leftovers are dropped.
-    func clampToBounds() {
-        let w = worldWidth
-        let h = worldHeight
-        func c(_ v: Vec2) -> Vec2 {
-            Vec2(clampD(v.x, 0, w), clampD(v.y, 0, h))
-        }
-        walls = walls.map { Wall(a: c($0.a), b: c($0.b)) }.filter { $0.length >= minWallLength }
-        exits = exits.map { Exit(id: $0.id, a: c($0.a), b: c($0.b)) }.filter { $0.width >= minExitWidth }
-        obstacles = obstacles.compactMap { o in
-            let origin = c(o.origin)
-            let far = c(o.origin + o.size)
-            let size = Vec2(far.x - origin.x, far.y - origin.y)
-            guard size.x >= minObstacleSide, size.y >= minObstacleSide else { return nil }
-            var clamped = o
-            clamped.origin = origin
-            clamped.size = size
-            return clamped // keep simClass + kind through a resize
-        }
-        ignitions = ignitions.map(c)
-        validateSelection()
     }
 
     // MARK: Accessible authoring (§5.6 — VoiceOver-operable placement)
@@ -611,17 +759,19 @@ final class EditorModel {
     /// Add a doorway centred on the given room edge at the citable exit minimum — no drag required, so a
     /// VoiceOver user can author exits on the primary path. The floor-drain gate still governs Simulate.
     func addExit(on edge: RoomEdge) {
+        let bounds = contentBounds
+        let lo = bounds.origin, hi = bounds.maxCorner, mid = bounds.center
         let half = SafetyStandards.minExitWidth / 2
         let (a, b): (Vec2, Vec2)
         switch edge {
-        case .north: a = Vec2(worldWidth / 2 - half, 0)
-            b = Vec2(worldWidth / 2 + half, 0)
-        case .south: a = Vec2(worldWidth / 2 - half, worldHeight)
-            b = Vec2(worldWidth / 2 + half, worldHeight)
-        case .west: a = Vec2(0, worldHeight / 2 - half)
-            b = Vec2(0, worldHeight / 2 + half)
-        case .east: a = Vec2(worldWidth, worldHeight / 2 - half)
-            b = Vec2(worldWidth, worldHeight / 2 + half)
+        case .north: a = Vec2(mid.x - half, lo.y)
+            b = Vec2(mid.x + half, lo.y)
+        case .south: a = Vec2(mid.x - half, hi.y)
+            b = Vec2(mid.x + half, hi.y)
+        case .west: a = Vec2(lo.x, mid.y - half)
+            b = Vec2(lo.x, mid.y + half)
+        case .east: a = Vec2(hi.x, mid.y - half)
+            b = Vec2(hi.x, mid.y + half)
         }
         exits.append(Exit(id: allocID(), a: snap(a), b: snap(b)))
     }
@@ -662,29 +812,40 @@ final class EditorModel {
         obstacles.removeAll { $0.id == id }
     }
 
-    /// Nudge an object by `delta` metres, snapped and clamped inside the room. The author may reposition
-    /// any prop they placed; the sim-class only affects blocking and RALLY relocatability, not authoring.
+    /// Nudge an object by `delta` metres, snapped to the grid. The author may reposition any prop they
+    /// placed anywhere on the free canvas; the sim-class only affects blocking and RALLY relocatability.
     func nudgeObstacle(_ id: Int, by delta: Vec2) {
         guard let i = obstacles.firstIndex(where: { $0.id == id }) else { return }
         let o = obstacles[i]
-        obstacles[i].origin = Vec2(
-            clampD(snapScalar(o.origin.x + delta.x), 0, max(0, worldWidth - o.size.x)),
-            clampD(snapScalar(o.origin.y + delta.y), 0, max(0, worldHeight - o.size.y))
-        )
+        obstacles[i].origin = Vec2(snapScalar(o.origin.x + delta.x), snapScalar(o.origin.y + delta.y))
     }
 
-    /// Distance (metres) from `c` along unit `dir` to the first room boundary it meets.
+    /// Nudge a water flood zone by `delta` metres, snapped to the grid.
+    func nudgeWater(_ id: Int, by delta: Vec2) {
+        guard let i = waterZones.firstIndex(where: { $0.id == id }) else { return }
+        let z = waterZones[i]
+        waterZones[i].origin = Vec2(snapScalar(z.origin.x + delta.x), snapScalar(z.origin.y + delta.y))
+    }
+
+    /// Remove a water zone by id — the accessible counterpart to the erase tool.
+    func removeWater(_ id: Int) {
+        waterZones.removeAll { $0.id == id }
+    }
+
+    /// Distance (metres) from `c` along unit `dir` to the first room boundary (`contentBounds`) it meets.
     private func rayToBound(from c: Vec2, dir: Vec2) -> Double {
+        let bounds = contentBounds
+        let lo = bounds.origin, hi = bounds.maxCorner
         var t = Double.infinity
         if dir.x > 1e-9 {
-            t = min(t, (worldWidth - c.x) / dir.x)
+            t = min(t, (hi.x - c.x) / dir.x)
         } else if dir.x < -1e-9 {
-            t = min(t, -c.x / dir.x)
+            t = min(t, (lo.x - c.x) / dir.x)
         }
         if dir.y > 1e-9 {
-            t = min(t, (worldHeight - c.y) / dir.y)
+            t = min(t, (hi.y - c.y) / dir.y)
         } else if dir.y < -1e-9 {
-            t = min(t, -c.y / dir.y)
+            t = min(t, (lo.y - c.y) / dir.y)
         }
         return t
     }
@@ -768,14 +929,13 @@ final class EditorModel {
         return nextID
     }
 
-    /// Snap a world point to the 0.25 m grid and clamp it inside the room.
+    /// Snap a world point to the 0.25 m grid. No clamping — the canvas is free, so points may sit
+    /// anywhere (including left of / above the base floor); `contentBounds` grows to enclose them.
     private func snap(_ p: Vec2) -> Vec2 {
-        Vec2(
-            clampD((p.x / cellSize).rounded() * cellSize, 0, worldWidth),
-            clampD((p.y / cellSize).rounded() * cellSize, 0, worldHeight)
-        )
+        Vec2(snapScalar(p.x), snapScalar(p.y))
     }
 
+    /// Clamp a scalar to `[lo, hi]` — still used to bound the exit clear-width stepper to its room-fit.
     private func clampD(_ v: Double, _ lo: Double, _ hi: Double) -> Double {
         min(max(v, lo), hi)
     }
@@ -789,7 +949,7 @@ final class EditorModel {
     /// actually removed, so a missed erase tap stays silent.
     @discardableResult
     private func erase(near p: Vec2) -> Bool {
-        enum Kind { case obstacle, exit, wall, ignition }
+        enum Kind { case obstacle, exit, wall, ignition, water }
         struct Hit { let kind: Kind
             let index: Int
             let dist: Double
@@ -803,6 +963,9 @@ final class EditorModel {
         }
         for (i, o) in obstacles.enumerated() {
             consider(.obstacle, i, distanceToBox(p, origin: o.origin, size: o.size))
+        }
+        for (i, z) in waterZones.enumerated() {
+            consider(.water, i, distanceToBox(p, origin: z.origin, size: z.size))
         }
         for (i, e) in exits.enumerated() {
             consider(.exit, i, distanceToSegment(p, e.a, e.b))
@@ -819,6 +982,7 @@ final class EditorModel {
         case .exit: exits.remove(at: hit.index)
         case .wall: walls.remove(at: hit.index)
         case .ignition: ignitions.remove(at: hit.index)
+        case .water: waterZones.remove(at: hit.index)
         }
         return true
     }
