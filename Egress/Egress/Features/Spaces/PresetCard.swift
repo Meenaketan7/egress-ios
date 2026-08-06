@@ -30,40 +30,42 @@ struct PresetCard: View {
         }
     }
 
-    /// The character who "lives" in this venue — drawn from the same sprite roster a run spawns, so the
-    /// card previews the real people. Silhouette varies by venue so the cards read as different places.
-    private var resident: (mobility: MobilityClass, emotion: EmotionalState, walking: Bool) {
-        switch preset.venue.type {
-        case .office: (.child, .calm, false)        // a young desk worker
-        case .nightclub: (.staff, .calm, false)     // the marshal on the door (RALLY)
-        case .concertHall: (.adult, .calm, false)   // a patron
-        case .transitHub: (.adult, .calm, true)     // a commuter, walking through
-        case .classroom: (.child, .calm, false)     // a pupil
-        default: (.adult, .calm, false)
-        }
+    /// The character who "lives" in this venue — one of the bundled pixel-art residents, picked from the
+    /// preset's stable seed so a card keeps the same person across launches and never re-rolls on redraw.
+    private var residentSprite: String {
+        "sprite_\(preset.id.pixelSeed % PresetCard.residentCount + 1)"
     }
+
+    /// How many `sprite_1…N` character images ship in the asset catalog (Assets.xcassets).
+    private static let residentCount = 31
 
     var body: some View {
         VStack(alignment: .leading, spacing: EgressSpacing.md) {
-            PresetThumbnail(venue: preset.venue)
-                .frame(height: 118)
-                .frame(maxWidth: .infinity)
-                .overlay(alignment: .bottomTrailing) {
-                    PixelCharacter(
-                        mobility: resident.mobility,
-                        emotion: resident.emotion,
-                        seed: preset.id.pixelSeed,
-                        walking: resident.walking
-                    )
-                    .frame(width: 66, height: 90)
-                    .padding(.trailing, EgressSpacing.sm)
+            // One brown "screen": the room plan on the left, the resident and its tier badge in a column
+            // on the right — both sit on the same dark canvas inside a single pixel border (design request).
+            HStack(alignment: .top, spacing: EgressSpacing.sm) {
+                PresetThumbnail(venue: preset.venue)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                VStack(alignment: .trailing, spacing: EgressSpacing.xs) {
+                    tierBadge
+                    Spacer(minLength: 0)
+                    Image(residentSprite)
+                        .resizable()
+                        .interpolation(.none) // keep the pixel edges crisp when scaled
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxHeight: 92)
                 }
-                .overlay(alignment: .topTrailing) { tierBadge }
-                .clipShape(PixelCornerRect(radius: EgressRadius.sm, pixel: 3))
-                .overlay(
-                    PixelCornerRect(radius: EgressRadius.sm, pixel: 3)
-                        .strokeBorder(Color.egOutline, lineWidth: 1.5)
-                )
+                .frame(maxHeight: .infinity)
+            }
+            .frame(height: 118)
+            .padding(EgressSpacing.sm)
+            .background(Color.egCanvasBase)
+            .clipShape(PixelCornerRect(radius: EgressRadius.sm, pixel: 3))
+            .overlay(
+                PixelCornerRect(radius: EgressRadius.sm, pixel: 3)
+                    .strokeBorder(Color.egOutline, lineWidth: 1.5)
+            )
 
             Text(preset.title)
                 .font(.system(.title3, design: .serif, weight: .bold))
@@ -87,7 +89,6 @@ struct PresetCard: View {
             .background(PixelCornerRect(radius: 5, pixel: 2).fill(Color.black.opacity(0.3)))
             .overlay(PixelCornerRect(radius: 5, pixel: 2).strokeBorder(tier.color, lineWidth: 1.2))
             .shadow(color: tier.color.opacity(0.9), radius: 3) // neon glow
-            .padding(EgressSpacing.sm)
     }
 
     private var statsRow: some View {
