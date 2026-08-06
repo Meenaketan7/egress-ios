@@ -32,12 +32,28 @@ struct PresetCard: View {
 
     /// The character who "lives" in this venue — one of the bundled pixel-art residents, picked from the
     /// preset's stable seed so a card keeps the same person across launches and never re-rolls on redraw.
+    /// The pool is chosen to *match the difficulty* (design request): a calm, in-control resident on a LITE
+    /// room, a neutral or mobility-aided one on STD, and a visibly alarmed one on PRO — the character's mood
+    /// tracks the crowd pressure, so a one-dot card never wears a panicked face.
     private var residentSprite: String {
-        "sprite_\(preset.id.pixelSeed % PresetCard.residentCount + 1)"
+        let pool = PresetCard.residents(for: difficulty)
+        return pool[preset.id.pixelSeed % pool.count]
     }
 
-    /// How many `sprite_1…N` character images ship in the asset catalog (Assets.xcassets).
-    private static let residentCount = 31
+    /// Resident sprites grouped by mood so a card's person reads its tier. Every id is a `sprite_N`
+    /// character in `Assets.xcassets`; the item sprites (pills, hazard drops) are deliberately excluded.
+    ///   • LITE — calm, waving, directing: relaxed and in control.
+    ///   • STD  — neutral, older or mobility-aided: needs care, but isn't panicking.
+    ///   • PRO  — hands on head, arms flailing, frightened: the pressure shows.
+    private static func residents(for difficulty: Int) -> [String] {
+        let ids: [Int]
+        switch difficulty {
+        case 1: ids = [1, 3, 4, 5, 6, 7, 8, 9, 11, 13, 14, 20, 21, 22, 27, 28, 29, 30, 31] // calm / confident
+        case 2: ids = [12, 15, 16, 17, 18, 19, 23, 25] // neutral / elderly / on the move
+        default: ids = [2, 10, 24, 26] // alarmed / panicked
+        }
+        return ids.map { "sprite_\($0)" }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: EgressSpacing.md) {

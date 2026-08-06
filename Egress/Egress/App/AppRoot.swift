@@ -35,6 +35,9 @@ struct AppRoot: View {
     @State private var editorPreset: VenuePreset?
     /// Drives the blank-editor cover raised by the centre ＋.
     @State private var showBlankEditor = false
+    /// Raised by a full-bleed pushed screen (a case-study detail) that wants the floating bar out of the
+    /// way, so its own bottom CTA can reach the true screen edge.
+    @State private var hideTabBar = false
     @Environment(FeedbackServices.self)
     private var feedback: FeedbackServices?
 
@@ -44,8 +47,11 @@ struct AppRoot: View {
 
             screen
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    EgressTabBar(selection: $selection, onCreate: openBlankEditor)
+                    if !hideTabBar {
+                        EgressTabBar(selection: $selection, onCreate: openBlankEditor)
+                    }
                 }
+                .onPreferenceChange(HidesTabBarKey.self) { hideTabBar = $0 }
         }
         .tint(Color.egDataGreen) // the single accent
         .preferredColorScheme(.light) // one committed cream look — never the system dark theme
@@ -66,13 +72,30 @@ struct AppRoot: View {
     private var screen: some View {
         switch selection {
         case .spaces: SpacesRootView(onOpenPreset: { editorPreset = $0 })
-        case .learn: LearnRootView()
+        case .learn: LearnRootView(onPlay: { editorPreset = $0 })
         }
     }
 
     private func openBlankEditor() {
         feedback?.haptics.play(.toolTap)
         showBlankEditor = true
+    }
+}
+
+// MARK: - HidesTabBarKey
+
+/// A pushed screen sets this to pull the floating tab bar (and its reserved bottom inset) off-screen —
+/// so a full-bleed detail like a case study reads edge-to-edge with its own bottom CTA. `AppRoot` reads
+/// it via `onPreferenceChange`; leaving the screen resets it to the default (bar shown).
+struct HidesTabBarKey: PreferenceKey {
+    static let defaultValue = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
+}
+
+extension View {
+    /// Hide the home tab bar while this screen is on top (see `HidesTabBarKey`).
+    func hidesTabBar(_ hidden: Bool = true) -> some View {
+        preference(key: HidesTabBarKey.self, value: hidden)
     }
 }
 

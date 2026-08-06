@@ -422,6 +422,7 @@ private struct EditorConfigSheet: View {
                         }
                     }
                 }
+                .listRowBackground(Color.egSurfaceSunken)
 
                 Section {
                     LabeledContent("Auto size", value: String(format: "%.1f × %.1f m", model.worldWidth, model.worldHeight))
@@ -440,6 +441,7 @@ private struct EditorConfigSheet: View {
                         "No fixed size — the room is whatever your walls enclose, and grows as you draw beyond it. Draw the shape you want, then fit the floor tightly to it. Each grid square is 0.25 m."
                     )
                 }
+                .listRowBackground(Color.egSurfaceSunken)
 
                 Section("Crowd") {
                     VStack(alignment: .leading, spacing: EgressSpacing.xs) {
@@ -463,10 +465,14 @@ private struct EditorConfigSheet: View {
                             .egMicroLabel()
                     }
                 }
+                .listRowBackground(Color.egSurfaceSunken)
 
                 exitsSection
+                    .listRowBackground(Color.egSurfaceSunken)
                 objectsSection
+                    .listRowBackground(Color.egSurfaceSunken)
                 hazardsSection
+                    .listRowBackground(Color.egSurfaceSunken)
 
                 Section("Layout") {
                     LabeledContent("Walls", value: "\(model.walls.count)")
@@ -479,10 +485,10 @@ private struct EditorConfigSheet: View {
                     .disabled(model.walls.isEmpty && model.exits.isEmpty && model.obstacles.isEmpty && model.ignitions.isEmpty && model
                         .waterZones.isEmpty)
                 }
+                .listRowBackground(Color.egSurfaceSunken)
             }
             .scrollContentBackground(.hidden)
             .background(Color.egGround)
-            .listRowBackground(Color.egSurfaceRaised)
             .navigationTitle("Configure")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -493,6 +499,10 @@ private struct EditorConfigSheet: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+        // Pin an opaque cream background so the sheet reads the same at every detent — otherwise iOS gives
+        // the medium detent a translucent material that warms the cards, and the large (stretched) detent
+        // turns opaque and reveals a jarring near-white. One committed cream look, expanded or not.
+        .presentationBackground(Color.egGround)
     }
 
     /// Exits as an accessible list (§5.6): a clear-width stepper and remove, plus an add-on-edge menu so

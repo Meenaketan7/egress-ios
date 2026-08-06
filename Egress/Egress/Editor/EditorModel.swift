@@ -186,7 +186,7 @@ final class EditorModel {
     @ObservationIgnored private var exteriorCache: (signature: Int, cells: Set<GridCoord>)?
 
     static let minCrowd = 5
-    static let maxCrowd = 400
+    static let maxCrowd = 600 // headroom for the big authored scenarios (e.g. the 600-person Atrium)
     static let minRoom = 4.0
     static let maxRoom = 30.0
 
