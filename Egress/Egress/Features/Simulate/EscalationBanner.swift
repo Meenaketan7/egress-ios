@@ -31,6 +31,33 @@ extension EscalationBand {
         case .casualty: "cross.case.fill"
         }
     }
+
+    /// Ink that reads on the solid band: charcoal on the bright amber approach bands, cream on the
+    /// darker red danger bands.
+    var ink: Color {
+        switch self {
+        case .congestion, .bottleneck: .egCanvasBase
+        case .crush, .exitBlocked, .casualty: .egCanvasText
+        }
+    }
+
+    /// RALLY's live coaching line for this band — the coach's *voice* on the alert, distinct from the
+    /// banner's flat statement of fact. No fabricated figures: it explains and advises, the grounded
+    /// numbers land at the verdict (§3.5).
+    var coaching: String {
+        switch self {
+        case .congestion:
+            "The crowd is packing in. Keep everyone moving toward the nearest exit."
+        case .bottleneck:
+            "The exit can't keep up with the flow — this is exactly where a crush begins."
+        case .crush:
+            "Dangerous density. In a real venue you'd hold the crowd back and meter the doors now."
+        case .exitBlocked:
+            "Fire has cut off a route. The exits still open have to carry everyone out."
+        case .casualty:
+            "Someone is down in the crush. Clear, unblocked egress matters most right now."
+        }
+    }
 }
 
 // MARK: - EscalationBanner
@@ -46,20 +73,18 @@ struct EscalationBanner: View {
             Image(systemName: escalation.band.symbol)
             Text(escalation.band.headline)
                 .egBody(.callout)
-                .fontWeight(.semibold)
+                .fontWeight(.bold)
             Spacer(minLength: 0)
-            Text(String(format: "%.0fs", escalation.time))
-                .egData(.footnote)
-                .foregroundStyle(Color.egTextSecondary)
+            Text(String(format: "t + %.0fs", escalation.time))
+                .egData(.footnote, weight: .semibold)
+                .opacity(0.75)
         }
-        .foregroundStyle(escalation.band.tint)
+        .foregroundStyle(escalation.band.ink)
         .padding(.horizontal, EgressSpacing.lg)
         .padding(.vertical, EgressSpacing.md)
         .frame(maxWidth: .infinity)
-        .egGlassSurface()
-        .overlay(
-            RoundedRectangle.egSquircle(EgressRadius.md)
-                .strokeBorder(escalation.band.tint.opacity(0.7), lineWidth: 1)
+        .background(
+            RoundedRectangle.egSquircle(EgressRadius.md).fill(escalation.band.tint)
         )
         .transition(.move(edge: .top).combined(with: .opacity))
     }

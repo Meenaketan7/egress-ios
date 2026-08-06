@@ -64,6 +64,13 @@ public final class Simulation: SimulationRunning {
     /// The most recent frame's smoothed density, cached by `step` so `snapshot` needn't recompute it.
     private var cachedDensity: DensityGrid?
 
+    /// Infers each agent's momentary emote glyph from frame-to-frame changes (§3 emote layer). A pure
+    /// observer, exactly like `updateEmotions` — it reads sim state and never writes back, so the crowd's
+    /// motion and every physics test stay untouched.
+    private var emoteTracker = EmoteTracker()
+    /// This frame's emotes by agent id, attached to each render in `snapshot`.
+    private var emotes: [Int: EmoteKind] = [:]
+
     public init(venue: VenueModel, config: SimulationConfig) {
         geometry = venue.geometry
         let size = venue.geometry.size
@@ -119,6 +126,7 @@ public final class Simulation: SimulationRunning {
         let density = currentDensity()
         cachedDensity = density
         updateEmotions(density: density)
+        updateEmotes(density: density)
         metrics.record(time: time, dt: advanced, density: density, activeCells: activeCells())
         evaluateEscalation(density: density)
 
@@ -133,7 +141,11 @@ public final class Simulation: SimulationRunning {
         let density = cachedDensity ?? currentDensity()
         return SimulationSnapshot(
             time: time,
-            agents: agents.map(\.render),
+            agents: agents.map { agent in
+                var render = agent.render
+                render.emote = agent.status.isActive ? emotes[agent.id] : nil
+                return render
+            },
             hazards: hazards.snapshot,
             density: density,
             live: liveMetrics(density: density)
@@ -214,6 +226,38 @@ public final class Simulation: SimulationRunning {
                 : local >= SafetyStandards.densityComfortable ? .uneasy
                 : .calm
         }
+    }
+
+    /// Infer this frame's emote glyphs (§3): assemble the slim per-agent view from state already
+    /// computed — arousal, local density, and proximity to fire and exits — and hand it to the tracker.
+    /// Only active agents are considered; the tracker holds each glyph briefly so it pops and fades. Like
+    /// `updateEmotions`, a read-only observer: no RNG, no feedback, so the run stays deterministic.
+    private func updateEmotes(density: DensityGrid) {
+        let fire = hazards.activeFire
+        let inputs: [EmoteInput] = agents.compactMap { agent in
+            guard agent.status.isActive else { return nil }
+            let cell = geometry.cell(for: agent.position)
+            return EmoteInput(
+                id: agent.id,
+                position: agent.position,
+                mobility: agent.mobility,
+                emotion: agent.emotion,
+                status: agent.status,
+                speed: agent.velocity.length,
+                localDensity: density.value(at: cell),
+                nearFire: fire.contains(cell) || neighbours(of: cell).contains(where: fire.contains),
+                nearExit: exits.contains { max(abs($0.x - cell.x), abs($0.y - cell.y)) <= 1 }
+            )
+        }
+        emotes = emoteTracker.update(agents: inputs, time: time)
+    }
+
+    /// The four orthogonal neighbours of a cell — used to read "beside the fire", not only "in it".
+    private func neighbours(of cell: GridCoord) -> [GridCoord] {
+        [
+            GridCoord(cell.x + 1, cell.y), GridCoord(cell.x - 1, cell.y),
+            GridCoord(cell.x, cell.y + 1), GridCoord(cell.x, cell.y - 1),
+        ]
     }
 
     /// Log the run-start markers once: the alarm that begins the evacuation and every editor-placed

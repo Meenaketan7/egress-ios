@@ -75,9 +75,15 @@ enum SimulationRenderer {
             patternFills: patternFills,
             into: &context
         )
-        drawHazards(snapshot.hazards, cellSize: venue.geometry.cellSize, projection: projection, into: &context)
+        drawHazards(
+            snapshot.hazards,
+            cellSize: venue.geometry.cellSize,
+            projection: projection,
+            time: snapshot.live.elapsed,
+            into: &context
+        )
         VenueScenery.drawExits(venue.exits, projection: projection, into: &context)
-        drawAgents(snapshot.agents, projection: projection, into: &context)
+        AgentSprites.drawCrowd(snapshot.agents, projection: projection, time: snapshot.live.elapsed, into: &context)
     }
 
     /// Per-cell density bands (persons·m⁻²). Comfortable renders nothing — only crowding shows. When
@@ -208,41 +214,96 @@ enum SimulationRenderer {
         return path
     }
 
+    /// Fire and smoke, drawn to *read as fire* rather than a flat fill: a soft warm glow beneath the
+    /// flames, per-cell "burning tiles" on a dark-ember→gold intensity ramp with a deterministic flicker,
+    /// rising ember specks over the hottest cells, and a drifting smoke veil on top. Everything is a pure
+    /// function of the snapshot and its elapsed `time`, so a paused/scrubbed frame renders identically.
     private static func drawHazards(
-        _ hazards: HazardSnapshot, cellSize: Double, projection: CanvasProjection, into context: inout GraphicsContext
+        _ hazards: HazardSnapshot,
+        cellSize: Double,
+        projection: CanvasProjection,
+        time: Double,
+        into context: inout GraphicsContext
     ) {
-        let side = projection.length(cellSize) + 0.5
-        for (coord, opacity) in hazards.smoke where opacity > 0.01 {
-            let topLeft = projection.point(Vec2(Double(coord.x) * cellSize, Double(coord.y) * cellSize))
-            let rect = CGRect(x: topLeft.x, y: topLeft.y, width: side, height: side)
-            context.fill(Path(rect), with: .color(.egHazardSmoke.opacity(min(0.8, opacity))))
+        let side = projection.length(cellSize)
+        func topLeft(_ coord: GridCoord) -> CGPoint {
+            projection.point(Vec2(Double(coord.x) * cellSize, Double(coord.y) * cellSize))
         }
-        for (coord, intensity) in hazards.fire where intensity > 0.01 {
-            let topLeft = projection.point(Vec2(Double(coord.x) * cellSize, Double(coord.y) * cellSize))
-            let rect = CGRect(x: topLeft.x, y: topLeft.y, width: side, height: side)
-            let colour = intensity >= 0.66 ? Color.egHazardFireCore : Color.egHazardFire
-            context.fill(Path(rect), with: .color(colour))
+
+        // 1) Warm glow — a blurred halo of the fire footprint so the flames cast light on the floor.
+        if !hazards.fire.isEmpty {
+            context.drawLayer { layer in
+                layer.addFilter(.blur(radius: side * 0.85))
+                for (coord, intensity) in hazards.fire where intensity > 0.05 {
+                    let point = topLeft(coord)
+                    let rect = CGRect(x: point.x, y: point.y, width: side, height: side)
+                        .insetBy(dx: -side * 0.3, dy: -side * 0.3)
+                    layer.fill(Path(rect), with: .color(.egHazardFire.opacity(0.4 * intensity)))
+                }
+            }
+        }
+
+        // 2) Burning tiles — inset a hair so the dark canvas shows a pixel grid between cells, and
+        //    flicker each cell on a per-cell phase so the fire shimmers instead of sitting as a slab.
+        let inset = side * 0.1
+        for (coord, intensity) in hazards.fire where intensity > 0.02 {
+            let point = topLeft(coord)
+            let flicker = 0.78 + 0.22 * sin(time * 9 + cellPhase(coord) * .pi * 2)
+            let hot = min(1, intensity * flicker)
+            let rect = CGRect(
+                x: point.x + inset,
+                y: point.y + inset,
+                width: side - inset * 2 + 0.5,
+                height: side - inset * 2 + 0.5
+            )
+            context.fill(Path(rect), with: .color(fireColour(hot)))
+        }
+
+        // 3) Rising embers — a bright speck over each hot cell, drifting upward and looping on time.
+        for (coord, intensity) in hazards.fire where intensity > 0.5 {
+            let point = topLeft(coord)
+            let phase = cellPhase(coord)
+            let flicker = 0.6 + 0.4 * sin(time * 12 + phase * .pi * 2)
+            let riseX = point.x + side * CGFloat(fract(phase * 3.1))
+            let riseY = point.y + side * CGFloat(1 - fract(phase * 1.7 + time * 0.55))
+            let radius = side * 0.09
+            let rect = CGRect(x: riseX - radius, y: riseY - radius, width: radius * 2, height: radius * 2)
+            context.fill(Path(ellipseIn: rect), with: .color(.egHazardFireCore.opacity(0.75 * flicker)))
+        }
+
+        // 4) Smoke veil on top — a thin drifting haze. It's kept light so it reads as smoke, and it
+        //    thins right down over active flame (fire burns through it), so the vivid fire core is never
+        //    masked into a muddy blob; smoke lingers mostly at the edges and where the fire has passed.
+        for (coord, opacity) in hazards.smoke where opacity > 0.02 {
+            let fireHere = hazards.fire[coord] ?? 0
+            let show = min(0.5, opacity) * (fireHere > 0.3 ? 0.28 : 1.0)
+            guard show > 0.02 else { continue }
+            let point = topLeft(coord)
+            let drift = CGFloat(sin(time * 0.8 + cellPhase(coord) * .pi * 2)) * side * 0.12
+            let rect = CGRect(x: point.x + drift, y: point.y, width: side + 0.5, height: side + 0.5)
+            context.fill(Path(rect), with: .color(.egHazardSmoke.opacity(show)))
         }
     }
 
-    private static func drawAgents(_ agents: [AgentRender], projection: CanvasProjection, into context: inout GraphicsContext) {
-        let radius = max(2, projection.length(SafetyStandards.bodyRadius))
-        for agent in agents where agent.status.isActive {
-            let centre = projection.point(agent.position)
-            let rect = CGRect(x: centre.x - radius, y: centre.y - radius, width: radius * 2, height: radius * 2)
-            context.fill(Path(ellipseIn: rect), with: .color(colour(for: agent)))
+    /// The fire colour ramp: dark ember → terracotta → orange → gold core as a cell heats up.
+    private static func fireColour(_ intensity: Double) -> Color {
+        switch intensity {
+        case ..<0.32: .egAccentBrick // deep red ember at the cool edge
+        case ..<0.58: .egHazardFire // terracotta flame
+        case ..<0.82: Color(hex: 0xE8842E) // orange mid-flame
+        default: .egHazardFireCore // gold core
         }
     }
 
-    /// Staff read as violet regardless of mood; everyone else is tinted by emotional state.
-    private static func colour(for agent: AgentRender) -> Color {
-        if agent.mobility == .staff {
-            return .egAgentStaff
-        }
-        switch agent.emotion {
-        case .calm: return .egAgentCalm
-        case .uneasy: return .egAgentUneasy
-        case .panicked: return .egAgentPanicked
-        }
+    /// A stable per-cell phase in 0…1 (classic hash) so each fire cell flickers on its own beat but the
+    /// same cell always flickers the same way — keeping the render deterministic.
+    private static func cellPhase(_ coord: GridCoord) -> Double {
+        let value = sin(Double(coord.x) * 12.9898 + Double(coord.y) * 78.233) * 43758.5453
+        return value - floor(value)
+    }
+
+    /// Fractional part, for looping ember drift.
+    private static func fract(_ value: Double) -> Double {
+        value - floor(value)
     }
 }

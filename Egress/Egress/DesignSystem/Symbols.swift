@@ -8,9 +8,10 @@ import UIKit
 /// Zero-dependency stand-in for SFSafeSymbols.
 enum AppSymbol: String, CaseIterable {
     // Tab bar
-    case spaces = "square.grid.2x2"
+    case spaces = "square.grid.2x2.fill"
+    case create = "plus.circle.fill" // centre "make a space" action (opens the editor)
     case simulate = "play.circle"
-    case learn = "book"
+    case learn = "book.fill"
 
     // HUD / metrics
     case density = "gauge.medium" // 🔴 confirm on iOS 26 → fallback "gauge"
@@ -28,6 +29,13 @@ enum AppSymbol: String, CaseIterable {
     case pause = "pause.fill"
     case restart = "arrow.counterclockwise"
     case stepBack = "backward.fill"
+    case stepForward = "forward.fill"
+    case recenter = "scope"
+
+    // Canvas camera (live simulation pan/zoom)
+    case zoomIn = "plus.magnifyingglass"
+    case zoomOut = "minus.magnifyingglass"
+    case fitView = "arrow.up.left.and.down.right.magnifyingglass" // 🟡 confirm → fallback "scope"
 
     // Editor / tools
     case wall = "pencil.line"
@@ -41,6 +49,7 @@ enum AppSymbol: String, CaseIterable {
         case .density: "gauge"
         case .exit: "arrow.right.to.line"
         case .door: "rectangle.portrait"
+        case .fitView: "scope"
         default: nil
         }
     }

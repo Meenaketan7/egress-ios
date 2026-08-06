@@ -228,6 +228,7 @@ final class EditorModel {
         walls = preset.venue.walls
         exits = preset.venue.exits
         obstacles = preset.venue.obstacles
+        ignitions = preset.ignitions // e.g. The Vault's seeded fire — the money-shot FAIL
         nextID = ((exits.map(\.id) + obstacles.map(\.id)).max() ?? 0) + 1
     }
 

@@ -97,10 +97,27 @@ struct SimulateScreen: View {
                 SimCanvasView(controller: controller, patternFills: feedback?.settings.colorBlindPatterns ?? true)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .overlay(alignment: .top) {
-                        if let escalation = controller.escalation {
-                            EscalationBanner(escalation: escalation)
-                                .padding(EgressSpacing.md)
+                        VStack(spacing: EgressSpacing.sm) {
+                            SimHUDPill(
+                                venueName: controller.venue.name,
+                                agents: controller.configuredAgents,
+                                elapsed: controller.snapshot.live.elapsed,
+                                fps: controller.fps,
+                                band: densityBand
+                            )
+                            if let escalation = controller.escalation {
+                                EscalationBanner(escalation: escalation)
+                            }
                         }
+                        .padding(EgressSpacing.md)
+                    }
+                    .overlay(alignment: .bottomTrailing) {
+                        SimDensityChip(density: controller.snapshot.live.worstDensity, band: densityBand)
+                            .padding(EgressSpacing.md)
+                    }
+                    .overlay(alignment: .bottomLeading) {
+                        SimZoomControls(controller: controller)
+                            .padding(EgressSpacing.md)
                     }
                     .overlay(alignment: .bottom) {
                         if let notice = performanceNotice {
@@ -121,14 +138,19 @@ struct SimulateScreen: View {
                     .strokeBorder(Color.egOutline, lineWidth: 2)
             )
 
-            hud
+            if let escalation = controller.escalation {
+                RallyLiveCard(escalation: escalation)
+            }
+
             controls
         }
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : Motion.banner, value: controller.escalation)
         .padding(EgressSpacing.md)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.egGround)
         .navigationTitle(controller.venue.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .tabBar) // a run is full-screen — the back button returns to Spaces
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showSettings = true } label: { Image(app: .settings) }
@@ -141,6 +163,16 @@ struct SimulateScreen: View {
             thermalState = ProcessInfo.processInfo.thermalState
         }
         .onChange(of: escalationKey) { _, _ in announceEscalation() }
+        .onChange(of: controller.isRunning) { _, running in
+            if running {
+                feedback?.sound.startAmbience()
+                updateAmbience()
+            } else {
+                feedback?.sound.stopAmbience()
+            }
+        }
+        .onChange(of: controller.snapshot.time) { _, _ in updateAmbience() }
+        .onDisappear { feedback?.sound.stopAmbience() }
         .onChange(of: controller.result?.id) { _, id in
             if id != nil {
                 persistLatestRun()
@@ -275,47 +307,69 @@ struct SimulateScreen: View {
         AccessibilityNotification.Announcement(message).post()
     }
 
-    private var hud: some View {
-        HStack(spacing: EgressSpacing.xl) {
-            metric("Inside", "\(controller.snapshot.live.activeCount)", .egDataGreen)
-            metric("Elapsed", String(format: "%.1fs", controller.snapshot.live.elapsed), .egTextPrimary)
-            metric("Density", String(format: "%.1f", controller.snapshot.live.worstDensity), .egCyan)
-            metric("Out", String(format: "%.0f%%", controller.snapshot.live.fractionOut * 100), .egCyan)
-        }
-        .padding(EgressSpacing.md)
-        .frame(maxWidth: .infinity)
-        .egGlassSurface()
+    /// The live crowding band, read off peak density — shared by the HUD status chip and the corner
+    /// density chip so they never disagree.
+    private var densityBand: SimDensityBand {
+        SimDensityBand(density: controller.snapshot.live.worstDensity)
     }
 
-    private func metric(_ label: String, _ value: String, _ tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: EgressSpacing.xxs) {
-            Text(label).egMicroLabel()
-            Text(value).egData(.title2).foregroundStyle(tint)
-        }
+    /// Drive the ambient beds from the live run: the crowd murmur swells with peak density, the fire
+    /// crackle with how many cells are alight. Only while actually running (a paused/scrubbed frame is
+    /// silent).
+    private func updateAmbience() {
+        guard controller.isRunning else { return }
+        let crowd = 0.3 + 0.7 * min(1, controller.snapshot.live.worstDensity / 6)
+        let fire = min(1, Double(controller.snapshot.hazards.fire.count) / 40)
+        feedback?.sound.setAmbience(crowd: crowd, fire: fire)
     }
 
     private var controls: some View {
-        HStack(spacing: EgressSpacing.md) {
-            Button(action: togglePlay) {
-                Label(
-                    controller.isRunning ? "Pause" : "Play",
-                    systemImage: controller.isRunning ? "pause.fill" : "play.fill"
-                )
-                .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(controller.isComplete)
-            .accessibilityHint(controller.isRunning ? "Pauses the evacuation" : "Sounds the alarm and starts the evacuation")
-
-            Button {
-                controller.reset()
-            } label: {
-                Label("Reset", systemImage: "arrow.counterclockwise")
-            }
-            .buttonStyle(.bordered)
-            .accessibilityHint("Restarts the same crowd from the beginning")
+        VStack(spacing: EgressSpacing.lg) {
+            SimTimeline(
+                progress: timelineProgress,
+                elapsed: controller.displaySnapshot.live.elapsed,
+                ticks: timelineTicks,
+                tint: densityBand.tint,
+                seekable: timelineSeekable,
+                onScrub: { fraction in
+                    let span = Double(max(1, controller.frameCount - 1))
+                    controller.seek(toIndex: Int((fraction * span).rounded()))
+                }
+            )
+            SimTransportBar(
+                isRunning: controller.isRunning,
+                isComplete: controller.isComplete,
+                canStepBack: controller.frameCount > 1,
+                isScrubbing: controller.isScrubbing,
+                onRestart: { controller.reset() },
+                onStepBack: { controller.stepBack() },
+                onPlayPause: togglePlay,
+                onStepForward: { controller.stepForward() },
+                onRecenter: { controller.returnToLive() }
+            )
         }
-        .tint(.egDataGreen)
+    }
+
+    /// The timeline can be scrubbed only when the run is paused (or done) and there are frames to scrub.
+    private var timelineSeekable: Bool {
+        !controller.isRunning && controller.frameCount > 1
+    }
+
+    /// While running, the fill shows how much of the crowd is out; paused/finished, it shows the scrub
+    /// position across the recorded frames.
+    private var timelineProgress: Double {
+        if timelineSeekable {
+            return Double(controller.displayIndex) / Double(max(1, controller.frameCount - 1))
+        }
+        return controller.snapshot.live.fractionOut
+    }
+
+    /// Escalation ticks, placed as fractions of the recorded run — only meaningful once the tape can be
+    /// scrubbed, so they're hidden during a live run to avoid implying a known end.
+    private var timelineTicks: [Double] {
+        guard timelineSeekable else { return [] }
+        let maxTime = max(0.001, controller.recordedDuration)
+        return controller.escalationTimes.map { min(1, $0 / maxTime) }
     }
 }
 

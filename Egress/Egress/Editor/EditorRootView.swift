@@ -23,15 +23,23 @@ struct EditorRootView: View {
     private var feedback: FeedbackServices?
     @Environment(\.dismiss)
     private var dismiss
+    /// Explicit close for when the editor is the *root* of a modal stack (the ＋ Create cover), where the
+    /// environment `dismiss` would only try to pop the empty stack. Nil on the pushed preset path, where
+    /// `dismiss` correctly pops back to Spaces.
+    private let onClose: (() -> Void)?
 
-    /// A blank room the user shapes from scratch.
-    init() {
+    /// A blank room the user shapes from scratch. `onClose` closes the presenting cover, if any.
+    init(onClose: (() -> Void)? = nil) {
         _model = State(initialValue: EditorModel())
+        self.onClose = onClose
     }
 
-    /// A furnished preset the user can tweak, then run — the Spaces gallery entry point.
-    init(preset: VenuePreset) {
+    /// A furnished preset the user can tweak, then run — the Spaces gallery entry point. Presented as a
+    /// full-screen cover (like ＋ Create), so `onClose` dismisses the cover; the floating tab bar lives
+    /// outside the cover and is never drawn over the editor or a run.
+    init(preset: VenuePreset, onClose: (() -> Void)? = nil) {
         _model = State(initialValue: EditorModel(preset: preset))
+        self.onClose = onClose
     }
 
     var body: some View {
@@ -59,7 +67,9 @@ struct EditorRootView: View {
     private var topChrome: some View {
         VStack(spacing: EgressSpacing.sm) {
             HStack(spacing: EgressSpacing.sm) {
-                circleButton("chevron.left", label: "Back") { dismiss() }
+                circleButton("chevron.left", label: "Back") {
+                    if let onClose { onClose() } else { dismiss() }
+                }
                 Button { showConfig = true } label: {
                     HStack(spacing: 6) {
                         Text(model.displayName)

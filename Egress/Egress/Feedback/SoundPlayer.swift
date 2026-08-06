@@ -27,6 +27,10 @@ final class SoundPlayer {
             .verdictPass: Self.render(Self.passScore),
             .verdictFail: Self.render(Self.failScore),
         ]
+        // The two looping ambience beds — an all-original crowd murmur and a fire crackle, both ~4 s
+        // and seamlessly loopable. Rendered once; their live level is set per frame by `setAmbience`.
+        murmurBuffer = Self.renderMurmur()
+        crackleBuffer = Self.renderCrackle()
     }
 
     /// Play a cue. Honours the master toggle and the −6 dB Reduce Audio Intensity cap; queues onto the
@@ -43,9 +47,47 @@ final class SoundPlayer {
         }
     }
 
+    // MARK: Ambient beds (crowd murmur + fire crackle)
+
+    /// Begin the looping ambience under a run. Both beds start silent; `setAmbience` fades them in to
+    /// match the crowd. A no-op when sound is off, so the silent switch and master toggle still win.
+    func startAmbience() {
+        guard settings.soundEnabled else { return }
+        do { try startIfNeeded() } catch { return }
+        if !ambienceScheduled {
+            murmur.scheduleBuffer(murmurBuffer, at: nil, options: [.loops], completionCallbackType: .dataPlayedBack) { _ in }
+            crackle.scheduleBuffer(crackleBuffer, at: nil, options: [.loops], completionCallbackType: .dataPlayedBack) { _ in }
+            ambienceScheduled = true
+        }
+        murmur.volume = 0
+        crackle.volume = 0
+        if !murmur.isPlaying { murmur.play() }
+        if !crackle.isPlaying { crackle.play() }
+        ambienceOn = true
+    }
+
+    /// Set the live ambience level. `crowd` and `fire` are 0…1 — the murmur swells with the crowd's
+    /// arousal, the crackle with how much fire is on the floor. Held well below the one-shot cues so it
+    /// never masks the alarm or a sting.
+    func setAmbience(crowd: Double, fire: Double) {
+        guard ambienceOn else { return }
+        let cap: Float = settings.reduceAudioIntensity ? 0.5 : 1.0
+        murmur.volume = Float(min(1, max(0, crowd))) * 0.22 * cap
+        crackle.volume = Float(min(1, max(0, fire))) * 0.34 * cap
+    }
+
+    /// Stop the ambience (a pause, the end of a run, or leaving the screen). One-shot cues are unaffected.
+    func stopAmbience() {
+        murmur.stop()
+        crackle.stop()
+        ambienceOn = false
+        ambienceScheduled = false
+    }
+
     /// Tear the engine down on backgrounding (§5.4); it restarts lazily on the next `play`.
     func stop() {
         player.stop()
+        stopAmbience()
         engine.stop()
         try? session.setActive(false, options: .notifyOthersOnDeactivation)
         started = false
@@ -56,9 +98,16 @@ final class SoundPlayer {
     private let settings: FeedbackSettings
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
+    /// The two looping ambience voices, mixed in under the one-shot cues.
+    private let murmur = AVAudioPlayerNode()
+    private let crackle = AVAudioPlayerNode()
     private let session = AVAudioSession.sharedInstance()
     private let buffers: [Cue: AVAudioPCMBuffer]
+    private let murmurBuffer: AVAudioPCMBuffer
+    private let crackleBuffer: AVAudioPCMBuffer
     private var started = false
+    private var ambienceOn = false
+    private var ambienceScheduled = false
 
     /// One mono 44.1 kHz float format shared by every buffer and the player→mixer connection.
     private static let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
@@ -71,6 +120,10 @@ final class SoundPlayer {
         if engine.attachedNodes.contains(player) == false {
             engine.attach(player)
             engine.connect(player, to: engine.mainMixerNode, format: Self.format)
+        }
+        for node in [murmur, crackle] where engine.attachedNodes.contains(node) == false {
+            engine.attach(node)
+            engine.connect(node, to: engine.mainMixerNode, format: Self.format)
         }
         try engine.start()
         started = true
@@ -139,6 +192,96 @@ final class SoundPlayer {
             }
             cursor += frames
         }
+        return buffer
+    }
+
+    // MARK: - Ambience synthesis
+
+    /// A tiny seeded xorshift so the ambience beds render identically every launch (and their loops
+    /// are reproducible), without pulling in the engine's RNG.
+    private struct Noise {
+        var state: UInt64
+        /// Next sample in −1…1.
+        mutating func bipolar() -> Double {
+            state ^= state << 13
+            state ^= state >> 7
+            state ^= state << 17
+            return Double(state % 20001) / 10000.0 - 1.0
+        }
+
+        /// Next sample in 0…1.
+        mutating func unit() -> Double { (bipolar() + 1) / 2 }
+    }
+
+    /// The crowd murmur: brown noise band-limited into the vocal range with a slow amplitude sway, so it
+    /// reads as a room full of anxious people rather than static. All-original, no sample. The sway
+    /// completes whole cycles across the buffer so the 4 s loop meets itself cleanly.
+    private static func renderMurmur() -> AVAudioPCMBuffer {
+        let seconds = 4.0
+        let frames = Int(seconds * sampleRate)
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames))!
+        buffer.frameLength = AVAudioFrameCount(frames)
+        let samples = buffer.floatChannelData![0]
+
+        var rng = Noise(state: 0x9E37_79B9_7F4A_7C15)
+        var brown = 0.0
+        var low = 0.0
+        var highPrevIn = 0.0
+        var highPrevOut = 0.0
+        var peak = 1e-6
+        for i in 0 ..< frames {
+            let white = rng.bipolar()
+            brown = (brown + 0.02 * white) * 0.995 // leaky integrator → warm low rumble
+            low += 0.18 * (brown - low) // one-pole low-pass (~1.2 kHz)
+            let highOut = 0.92 * (highPrevOut + low - highPrevIn) // one-pole high-pass (~200 Hz)
+            highPrevIn = low
+            highPrevOut = highOut
+            let t = Double(i) / Double(frames)
+            let sway = 0.6 + 0.4 * sin(2 * .pi * 3 * t) // 3 whole cycles → seamless loop
+            let value = highOut * sway
+            samples[i] = Float(value)
+            peak = max(peak, abs(value))
+        }
+        let gain = Float(0.6 / peak) // normalise so the bed sits at a predictable level
+        for i in 0 ..< frames { samples[i] *= gain }
+        return buffer
+    }
+
+    /// The fire bed: a low roar (band-limited brown noise) plus scattered decaying crackle pops. Pops are
+    /// placed by the seeded RNG and never in the last tenth of a second, so the loop's tail is quiet and
+    /// the seam is silent.
+    private static func renderCrackle() -> AVAudioPCMBuffer {
+        let seconds = 4.0
+        let frames = Int(seconds * sampleRate)
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames))!
+        buffer.frameLength = AVAudioFrameCount(frames)
+        let samples = buffer.floatChannelData![0]
+
+        var rng = Noise(state: 0xD1B5_4A32_D192_ED03)
+        // Low roar underlay.
+        var brown = 0.0
+        var low = 0.0
+        for i in 0 ..< frames {
+            brown = (brown + 0.02 * rng.bipolar()) * 0.995
+            low += 0.05 * (brown - low)
+            samples[i] = Float(low * 2.4)
+        }
+        // Crackle pops — short, quick-decaying filtered-noise bursts.
+        let quietTail = Int(0.1 * sampleRate)
+        for _ in 0 ..< 40 {
+            let start = Int(rng.unit() * Double(frames - quietTail))
+            let length = Int((0.005 + rng.unit() * 0.02) * sampleRate)
+            let amp = 0.4 + rng.unit() * 0.5
+            for k in 0 ..< length where start + k < frames {
+                let envelope = exp(-Double(k) / Double(length) * 5) // fast decay = a "tick"
+                samples[start + k] += Float(rng.bipolar() * envelope * amp)
+            }
+        }
+        // Normalise.
+        var peak: Float = 1e-6
+        for i in 0 ..< frames { peak = max(peak, abs(samples[i])) }
+        let gain = 0.7 / peak
+        for i in 0 ..< frames { samples[i] *= gain }
         return buffer
     }
 }

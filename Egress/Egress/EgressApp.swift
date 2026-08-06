@@ -15,7 +15,7 @@ struct EgressApp: App {
 
     var body: some Scene {
         WindowGroup {
-            AppRoot()
+            RootGate()
                 .environment(\.dependencies, dependencies)
                 .environment(feedback)
                 .modelContainer(dependencies.modelContainer)

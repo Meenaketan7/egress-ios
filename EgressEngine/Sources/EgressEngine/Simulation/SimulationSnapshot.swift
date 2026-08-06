@@ -15,22 +15,32 @@ public struct AgentRender: Identifiable, Sendable, Equatable {
     public let id: Int
     /// Position in metres (world space).
     public var position: Vec2
+    /// Velocity in m/s — the renderer reads it to lean the sprite into its stride (gait). A display
+    /// channel only; the physics owns the real velocity.
+    public var velocity: Vec2
     public var emotion: EmotionalState
     public var mobility: MobilityClass
     public var status: AgentStatus
+    /// The momentary glyph above this person, or `nil`. A transient display channel produced by the
+    /// `EmoteTracker` (a pure observer) — it never influences the physics.
+    public var emote: EmoteKind?
 
     public init(
         id: Int,
         position: Vec2,
+        velocity: Vec2 = .zero,
         emotion: EmotionalState,
         mobility: MobilityClass,
-        status: AgentStatus
+        status: AgentStatus,
+        emote: EmoteKind? = nil
     ) {
         self.id = id
         self.position = position
+        self.velocity = velocity
         self.emotion = emotion
         self.mobility = mobility
         self.status = status
+        self.emote = emote
     }
 }
 

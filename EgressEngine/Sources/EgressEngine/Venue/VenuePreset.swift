@@ -16,13 +16,18 @@ public struct VenuePreset: Identifiable, Sendable {
     /// Default occupancy — becomes `SimulationConfig.agentCount`. Chosen to make each layout's
     /// character read on the first run (comfortable clear-out vs. a doorway that jams).
     public let crowd: Int
+    /// Pre-placed fire ignition points in world metres — fed into the editor and, from there, into
+    /// `SimulationConfig.ignition`. Empty for most presets; The Vault seeds the money-shot fire here so
+    /// its dramatic FAIL survives the Spaces → editor → Run path (there is no more Simulate demo tab).
+    public let ignitions: [Vec2]
 
-    public init(id: String, title: String, blurb: String, venue: VenueModel, crowd: Int) {
+    public init(id: String, title: String, blurb: String, venue: VenueModel, crowd: Int, ignitions: [Vec2] = []) {
         self.id = id
         self.title = title
         self.blurb = blurb
         self.venue = venue
         self.crowd = crowd
+        self.ignitions = ignitions
     }
 
     /// Room extent in metres — for the card subtitle and for seeding the editor's steppers.
@@ -104,7 +109,8 @@ extension VenuePreset {
                 prop(15, 7, 3.5, 1, 1), prop(16, 8.5, 5.2, 1, 1)  // standing tables
             ]
         ),
-        crowd: 150
+        crowd: 150,
+        ignitions: [Vec2(5.5, 6.0)] // fire seeded in the exit queue — the money-shot FAIL (was SampleVenue.moneyShotIgnition)
     )
 
     /// Concert Hall — a stage, two seating blocks, and crowd barriers funnelling to a wide main

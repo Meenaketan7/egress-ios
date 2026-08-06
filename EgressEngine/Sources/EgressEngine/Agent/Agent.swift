@@ -31,7 +31,10 @@ public struct Agent: Identifiable, Sendable {
     /// The slim value the renderer consumes — position plus the three display channels, nothing
     /// physical. Makes building a `SimulationSnapshot` a one-liner: `agents.map(\.render)`.
     public var render: AgentRender {
-        AgentRender(id: id, position: position, emotion: emotion, mobility: mobility, status: status)
+        AgentRender(
+            id: id, position: position, velocity: velocity,
+            emotion: emotion, mobility: mobility, status: status
+        )
     }
 
     /// Free-walking speed by population type (m/s). These live here for now; they move into

@@ -14,6 +14,20 @@ extension View {
             }
     }
 
+    /// Dark-canvas pill — the counterpart to `egGlassSurface` for chrome that floats *on the dark
+    /// game-screen* (HUD pill, density chip, RALLY card): a near-opaque raised dark fill with a soft
+    /// warm separator, so cream text and band tints read against the near-black floor.
+    func egCanvasSurface(cornerRadius: CGFloat = EgressRadius.md, tint: Color = .egCanvasSeparator) -> some View {
+        self
+            .background {
+                RoundedRectangle.egSquircle(cornerRadius).fill(Color.egCanvasRaised.opacity(0.94))
+            }
+            .overlay {
+                RoundedRectangle.egSquircle(cornerRadius)
+                    .strokeBorder(tint.opacity(0.65), lineWidth: 1)
+            }
+    }
+
     /// Sunken chip / inset field — a slightly darker cream with a soft tan hairline. Used for chips,
     /// HUD pills and inline metrics that should read *inside* a card rather than lifting off it.
     /// (Retains the old `egGlassSurface` name; the app has no blur glass in this theme.)

@@ -15,11 +15,42 @@ final class SimulationController {
     private(set) var snapshot: SimulationSnapshot
     private(set) var isRunning = false
 
+    /// Smoothed display frame-rate shown in the HUD pill. An exponential moving average of the real
+    /// frame cadence — this is a *rendering* readout, deliberately separate from the fixed 1/60
+    /// simulation step, so it can honestly report a dropped frame without touching determinism.
+    private(set) var fps: Double = 60
+
+    /// A decimated tape of past frames (≈20 fps) so the transport can step back and the timeline can
+    /// scrub. The engine is forward-only, so *reviewing* the past means replaying recorded snapshots;
+    /// pressing play always resumes the real run from the live edge (`returnToLive`).
+    private(set) var history: [SimulationSnapshot] = []
+    /// The frame the canvas should draw: a recorded one while scrubbing, otherwise the live snapshot.
+    private var seekIndex: Int?
+    /// One recorded frame roughly every 1/20 s of sim time — enough to scrub smoothly without keeping
+    /// every 1/60 step for a long run.
+    private static let recordInterval: TimeInterval = 1.0 / 20.0
+    private var lastRecordedTime: Double = -1
+
     /// Set the instant a run resolves; cleared on reset. Its presence drives the results sheet.
     private(set) var result: RunResult?
     /// The most recent live escalation while it is still "fresh" (raised within the last few seconds of
     /// sim time), or `nil` — the HUD banner shows this and nothing else.
     private(set) var escalation: EscalationTracker.Escalation?
+
+    // MARK: Live camera (UI pan/zoom + tap-to-follow)
+
+    /// The pan/zoom camera over the live canvas — reused from the editor, so the projection, gestures and
+    /// hit-testing are the exact same maths. Pure UI state: it never touches the deterministic simulation.
+    var camera = EditorCamera()
+    /// One-time guard so the camera fits the whole venue the first time the view reports a real size.
+    private(set) var cameraFramed = false
+    /// The agent the camera is following (tap-to-focus), or `nil` for a free camera. While set, the camera
+    /// re-centres on this person every frame so it tracks them as they move through the crowd.
+    private(set) var focusedAgentID: Int?
+    /// Last canvas size the view reported — lets the ± buttons and recenter anchor/fit without the view.
+    private var lastViewSize: CGSize = .zero
+    /// A comfortable "watch one person" zoom (points·m⁻¹) — a few metres across, big enough for the face.
+    private static let focusZoom: CGFloat = 78
 
     private var sim: Simulation
     private let config: SimulationConfig
@@ -53,6 +84,153 @@ final class SimulationController {
         let engine = Simulation(venue: venue, config: config)
         sim = engine
         snapshot = engine.snapshot()
+        recordFrame()
+    }
+
+    // MARK: Playback frame tape (step-back / scrub)
+
+    /// The frame the canvas draws: the scrubbed history frame while seeking, else the live snapshot.
+    var displaySnapshot: SimulationSnapshot {
+        if let index = seekIndex, history.indices.contains(index) {
+            return history[index]
+        }
+        return snapshot
+    }
+
+    /// Number of recorded frames — the timeline's scrub range.
+    var frameCount: Int { history.count }
+
+    /// The frame currently shown (its index into `history`): the scrub position, or the live edge.
+    var displayIndex: Int { seekIndex ?? max(0, history.count - 1) }
+
+    /// True while the transport is parked on a past frame rather than the live edge.
+    var isScrubbing: Bool { seekIndex != nil }
+
+    /// Sim-time of each escalation so far — the timeline draws a tick at each.
+    var escalationTimes: [Double] { sim.escalations.map(\.time) }
+
+    /// Total sim-time captured on the tape — the timeline's full-scale reference for placing ticks.
+    var recordedDuration: Double { history.last?.time ?? snapshot.time }
+
+    /// Append the current snapshot to the tape, decimated to `recordInterval` (the final frame always
+    /// lands so a completed run scrubs to its true end).
+    private func recordFrame() {
+        let time = snapshot.time
+        if history.isEmpty || time - lastRecordedTime >= Self.recordInterval || sim.isComplete {
+            history.append(snapshot)
+            lastRecordedTime = time
+        }
+    }
+
+    /// Jump the scrubber to a recorded frame (pauses first — scrubbing never advances the real run).
+    func seek(toIndex index: Int) {
+        guard !history.isEmpty else { return }
+        if isRunning { pause() }
+        seekIndex = min(max(0, index), history.count - 1)
+        updateFollowCamera()
+    }
+
+    /// Step one recorded frame back, pausing the run.
+    func stepBack() {
+        guard !history.isEmpty else { return }
+        if isRunning { pause() }
+        seekIndex = max(0, displayIndex - 1)
+        updateFollowCamera()
+    }
+
+    /// Step forward one frame. While scrubbing this walks the tape (snapping back to live at the end);
+    /// parked at the live edge it advances the real run one fixed 1/60 step.
+    func stepForward() {
+        if seekIndex != nil {
+            let next = displayIndex + 1
+            seekIndex = next >= history.count - 1 ? nil : next
+            updateFollowCamera()
+            return
+        }
+        guard !isRunning, !sim.isComplete else { return }
+        sim.step(dt: Self.fixedStep)
+        snapshot = sim.snapshot()
+        refreshEscalation()
+        recordFrame()
+        updateFollowCamera()
+        if sim.isComplete { finish() }
+    }
+
+    /// Return the transport to the live edge (the focus/recenter control) so the next play resumes the
+    /// actual run rather than replaying history.
+    func returnToLive() {
+        seekIndex = nil
+    }
+
+    // MARK: Live camera — pan / zoom / tap-to-follow
+
+    /// The venue's full extent in world metres — the "fit to floor" framing target.
+    private var venueBounds: WorldRect {
+        WorldRect(origin: .zero, size: Vec2(venue.geometry.worldWidth, venue.geometry.worldHeight))
+    }
+
+    /// The view reports its size each layout; the first real size frames the camera to the whole floor.
+    func noteCanvasSize(_ size: CGSize) {
+        guard size.width > 0, size.height > 0 else { return }
+        lastViewSize = size
+        if !cameraFramed {
+            camera.fit(venueBounds, in: size)
+            cameraFramed = true
+        }
+    }
+
+    /// Zoom about the view centre — the ± buttons. `factor > 1` zooms in.
+    func zoomCamera(by factor: CGFloat) {
+        guard lastViewSize.width > 0 else { return }
+        let projection = CanvasProjection(camera: camera, viewSize: lastViewSize)
+        let centre = projection.world(CGPoint(x: lastViewSize.width / 2, y: lastViewSize.height / 2))
+        camera.zoom(by: factor, aroundWorld: centre)
+    }
+
+    /// Fit the whole floor and stop following anyone — the canvas "recenter".
+    func recenterCamera() {
+        focusedAgentID = nil
+        guard lastViewSize.width > 0 else { return }
+        camera.fit(venueBounds, in: lastViewSize)
+        cameraFramed = true
+    }
+
+    /// A free-camera pan (a finger drag) — drops any follow so the drag isn't fought each frame.
+    func panCamera(byScreen delta: CGSize) {
+        focusedAgentID = nil
+        camera.pan(byScreen: delta)
+    }
+
+    /// Pinch-zoom about a world anchor (the pinch centroid). Keeps any follow so you can zoom on a tracked
+    /// person; the follow just re-centres them next frame.
+    func pinchCamera(by factor: CGFloat, aroundWorld anchor: Vec2) {
+        camera.zoom(by: factor, aroundWorld: anchor)
+    }
+
+    /// Tap-to-focus: pick the nearest active agent to a tapped world point and follow it, zoomed in enough
+    /// to read its face. A tap on empty floor (nothing within reach) drops the follow instead.
+    func focusAgent(nearWorld world: Vec2) {
+        let hitRadius = 1.2 // metres — a generous finger target in world space
+        let nearest = displaySnapshot.agents
+            .filter(\.status.isActive)
+            .min { $0.position.distance(to: world) < $1.position.distance(to: world) }
+        guard let agent = nearest, agent.position.distance(to: world) <= hitRadius else {
+            focusedAgentID = nil
+            return
+        }
+        focusedAgentID = agent.id
+        camera.pointsPerMetre = EditorCamera.clampZoom(max(camera.pointsPerMetre, Self.focusZoom))
+        camera.center = agent.position
+    }
+
+    /// Re-centre on the followed agent for the current frame; clears the follow once they leave the floor.
+    private func updateFollowCamera() {
+        guard let id = focusedAgentID else { return }
+        if let agent = displaySnapshot.agents.first(where: { $0.id == id && $0.status.isActive }) {
+            camera.center = agent.position
+        } else {
+            focusedAgentID = nil
+        }
     }
 
     var isComplete: Bool {
@@ -83,6 +261,7 @@ final class SimulationController {
     /// isn't a huge dt and no stale catch-up is banked across a pause.
     func play() {
         guard !sim.isComplete else { return }
+        seekIndex = nil // resume from the live edge, never from a scrubbed-back frame
         lastFrame = nil
         stepAccumulator = 0
         isRunning = true
@@ -104,6 +283,11 @@ final class SimulationController {
         lastFrame = nil
         stepAccumulator = 0
         isRunning = false
+        history = []
+        seekIndex = nil
+        lastRecordedTime = -1
+        focusedAgentID = nil // the crowd respawns — don't chase a stale identity; keep the user's zoom
+        recordFrame()
     }
 
     /// Apply RALLY's fix to the venue and re-run the identical crowd, remembering the score just earned
@@ -135,6 +319,11 @@ final class SimulationController {
         let elapsed = frame.timeIntervalSince(previous)
         guard elapsed > 0 else { return }
 
+        // Smooth the observed frame rate for the HUD (0.1 EMA); clamp so a huge post-stall dt can't
+        // print an absurd number. Purely cosmetic — it never feeds the fixed-step accumulator below.
+        let instantaneous = min(120, 1.0 / elapsed)
+        fps = fps * 0.9 + instantaneous * 0.1
+
         stepAccumulator += elapsed
         var steps = 0
         while stepAccumulator >= Self.fixedStep, steps < Self.maxStepsPerFrame, !sim.isComplete {
@@ -151,6 +340,8 @@ final class SimulationController {
         guard steps > 0 else { return } // sub-frame gap: nothing advanced, nothing to redraw
         snapshot = sim.snapshot()
         refreshEscalation()
+        recordFrame()
+        updateFollowCamera()
         if sim.isComplete {
             isRunning = false
             finish()
